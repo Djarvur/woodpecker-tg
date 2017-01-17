@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"log"
 
 	tg "github.com/go-telegram-bot-api/telegram-bot-api"
@@ -11,6 +12,9 @@ const token = ""
 var bot *tg.BotAPI
 
 func init() {
+	debug := flag.Bool("debug", false, "enable debug logs")
+	flag.Parse()
+
 	log.Println("[INIT] I'm alive!")
 
 	var err error
@@ -19,7 +23,7 @@ func init() {
 		log.Fatalf("[BOT] Initialize error: %+v", err)
 	}
 	log.Printf("[BOT] Authorized as @%s", bot.Self.UserName)
-	bot.Debug = true
+	bot.Debug = *debug
 }
 
 func main() {
