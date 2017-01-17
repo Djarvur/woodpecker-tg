@@ -2,28 +2,42 @@ package main
 
 import (
 	"flag"
+	"io/ioutil"
 	"log"
 
 	tg "github.com/go-telegram-bot-api/telegram-bot-api"
+	"github.com/hjson/hjson-go"
 )
 
-const token = ""
-
-var bot *tg.BotAPI
+var (
+	bot    *tg.BotAPI
+	config map[string]interface{}
+)
 
 func init() {
+	log.Println("[INIT] I'm alive!")
+
 	debug := flag.Bool("debug", false, "enable debug logs")
 	flag.Parse()
 
-	log.Println("[INIT] I'm alive!")
-
-	var err error
-	bot, err = tg.NewBotAPI(token)
+	// Open configuration file and read content
+	cfgFile, err := ioutil.ReadFile("config.hjson")
 	if err != nil {
-		log.Fatalf("[BOT] Initialize error: %+v", err)
+		log.Fatalf("[ERROR] Ошибка чтения конфигурации: %s", err)
 	}
-	log.Printf("[BOT] Authorized as @%s", bot.Self.UserName)
-	bot.Debug = *debug
+	if err = hjson.Unmarshal(cfgFile, &config); err != nil {
+		log.Fatalf("[ERROR] Ошибка декодирования конфигурации: %s", err.Error())
+	}
+	log.Println("[CONFIG] Успешно сконфигуровано!")
+
+	// Initialize bot
+	bot, err = tg.NewBotAPI(config["token"].(string))
+	if err != nil {
+		log.Fatalf("[ERROR] Ошибка инициализации бота: %+v", err)
+	}
+	log.Printf("[BOT] Авторизован как @%s", bot.Self.UserName)
+
+	bot.Debug = *debug // More logs
 }
 
 func main() {
@@ -33,7 +47,7 @@ func main() {
 	upd.Timeout = 60
 	updates, err := bot.GetUpdatesChan(upd)
 	if err != nil {
-		log.Printf("[ERROR][UPDATES] %s", err.Error())
+		log.Printf("[ERROR] Ошибка получения обновлений: %s", err.Error())
 	}
 
 	// Updater
@@ -51,6 +65,6 @@ func sendEcho(msg *tg.Message) {
 	echo.ReplyToMessageID = msg.MessageID
 
 	if _, err := bot.Send(echo); err != nil {
-		log.Printf("[ERROR][SEND] %s", err.Error())
+		log.Printf("[ERROR] Ошибка отправки: %s", err.Error())
 	}
 }
