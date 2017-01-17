@@ -2,8 +2,10 @@ package main
 
 import (
 	"flag"
+	"fmt"
 	"io/ioutil"
 	"log"
+	"net/http"
 
 	tg "github.com/go-telegram-bot-api/telegram-bot-api"
 	"github.com/hjson/hjson-go"
@@ -16,9 +18,6 @@ var (
 
 func init() {
 	log.Println("[INIT] I'm alive!")
-
-	debug := flag.Bool("debug", false, "enable debug logs")
-	flag.Parse()
 
 	// Open configuration file and read content
 	cfgFile, err := ioutil.ReadFile("config.hjson")
@@ -37,17 +36,19 @@ func init() {
 	}
 	log.Printf("[BOT] Авторизован как @%s", bot.Self.UserName)
 
-	bot.Debug = *debug // More logs
 }
 
 func main() {
-	updates := make(<-chan tg.Update)
+	debug := flag.Bool("debug", false, "enable debug logs")
+	webhook := flag.Bool("webhook", false, "enable debug logs")
+	flag.Parse()
 
-	upd := tg.NewUpdate(0)
-	upd.Timeout = 60
-	updates, err := bot.GetUpdatesChan(upd)
+	bot.Debug = *debug // More logs
+
+	updates := make(<-chan tg.Update)
+	updates, err := setUpdates(*webhook)
 	if err != nil {
-		log.Printf("[ERROR] Ошибка получения обновлений: %s", err.Error())
+		log.Fatalf("[ERROR] Ошибка получения обновлений: %s", err.Error())
 	}
 
 	// Updater
@@ -55,6 +56,32 @@ func main() {
 		if update.Message != nil {
 			go sendEcho(update.Message)
 		}
+	}
+}
+
+func setUpdates(isWebhook bool) (<-chan tg.Update, error) {
+	bot.RemoveWebhook() // Just in case
+	if isWebhook == true {
+		if _, err := bot.SetWebhook(
+			tg.NewWebhook(
+				fmt.Sprint(config["webhook_set"].(string), config["token"].(string)),
+			),
+		); err != nil {
+			return nil, err
+		}
+		go http.ListenAndServe(config["webhook_serve"].(string), nil)
+		updates := bot.ListenForWebhook(
+			fmt.Sprint(config["webhook_listen"].(string), config["token"].(string)),
+		)
+		return updates, nil
+	} else {
+		upd := tg.NewUpdate(0)
+		upd.Timeout = 60
+		updates, err := bot.GetUpdatesChan(upd)
+		if err != nil {
+			return nil, err
+		}
+		return updates, nil
 	}
 }
 
