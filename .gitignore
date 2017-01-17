@@ -22,3 +22,7 @@ _testmain.go
 *.exe
 *.test
 *.prof
+
+# Custom
+Dyatel_Bot
+config.hjson
