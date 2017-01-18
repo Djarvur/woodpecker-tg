@@ -54,7 +54,7 @@ func main() {
 	// Updater
 	for update := range updates {
 		if update.Message != nil {
-			go sendEcho(update.Message)
+			go messages(update.Message)
 		}
 	}
 }
@@ -82,16 +82,5 @@ func setUpdates(isWebhook bool) (<-chan tg.Update, error) {
 			return nil, err
 		}
 		return updates, nil
-	}
-}
-
-func sendEcho(msg *tg.Message) {
-	log.Printf("[LOG] %s: %s", msg.From.UserName, msg.Text)
-
-	echo := tg.NewMessage(msg.Chat.ID, msg.Text)
-	echo.ReplyToMessageID = msg.MessageID
-
-	if _, err := bot.Send(echo); err != nil {
-		log.Printf("[ERROR] Ошибка отправки: %s", err.Error())
 	}
 }

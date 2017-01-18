@@ -1,6 +1,6 @@
 {
 	token: "" // Telegram bot token
-	webhook_set: "https://site.com/"
+	webhook_set: "https://redmine.gitinsky.com"
 	webhook_listen: "/"
 	webhook_serve: "0.0.0.0:8443"
 }
