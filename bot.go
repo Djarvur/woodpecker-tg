@@ -1,44 +1,53 @@
 package main
 
 import (
+	"database/sql"
 	"flag"
 	"fmt"
 	"io/ioutil"
-	"log"
 	"net/http"
 
+	_ "github.com/go-sql-driver/mysql"
 	tg "github.com/go-telegram-bot-api/telegram-bot-api"
 	"github.com/hjson/hjson-go"
+	"github.com/kirillDanshin/dlog"
 )
 
 var (
 	bot    *tg.BotAPI
 	config map[string]interface{}
+	locale map[string]string
 )
 
 func init() {
-	log.Println("[INIT] I'm alive!")
-
 	// Open configuration file and read content
 	cfgFile, err := ioutil.ReadFile("config.hjson")
 	if err != nil {
-		log.Fatalf("[ERROR] Ошибка чтения конфигурации: %s", err)
+		panic(err.Error())
 	}
 	if err = hjson.Unmarshal(cfgFile, &config); err != nil {
-		log.Fatalf("[ERROR] Ошибка декодирования конфигурации: %s", err.Error())
+		panic(err.Error())
 	}
-	log.Println("[CONFIG] Успешно сконфигуровано!")
 
 	// Initialize bot
 	bot, err = tg.NewBotAPI(config["token"].(string))
 	if err != nil {
-		log.Fatalf("[ERROR] Ошибка инициализации бота: %+v", err)
+		panic(err.Error())
 	}
-	log.Printf("[BOT] Авторизован как @%s", bot.Self.UserName)
+	dlog.F("[BOT] Authorized as @%s", bot.Self.UserName)
 
 }
 
 func main() {
+	db, err := sql.Open(
+		"mysql",
+		fmt.Sprintf("%s:%s@/%s", config["mysql_user"].(string), config["mysql_pass"].(string), config["mysql_db"].(string)),
+	)
+	if err != nil {
+		panic(err.Error())
+	}
+	defer db.Close()
+
 	debug := flag.Bool("debug", false, "enable debug logs")
 	webhook := flag.Bool("webhook", false, "enable debug logs")
 	flag.Parse()
@@ -46,15 +55,15 @@ func main() {
 	bot.Debug = *debug // More logs
 
 	updates := make(<-chan tg.Update)
-	updates, err := setUpdates(*webhook)
+	updates, err = setUpdates(*webhook)
 	if err != nil {
-		log.Fatalf("[ERROR] Ошибка получения обновлений: %s", err.Error())
+		dlog.F("[ERROR] Ошибка получения обновлений: %s", err.Error())
 	}
 
 	// Updater
 	for update := range updates {
 		if update.Message != nil {
-			go messages(update.Message)
+			go messages(update.Message, db)
 		}
 	}
 }

@@ -23,7 +23,7 @@ func getCurrentUser(endpoint, apikey string) (*redmine.User, error) {
 	}{}
 	if resp.StatusCode != 200 {
 		var er = struct {
-			Errors []string `json:"errors,omitempty"`
+			Errors []string `json:"errors"`
 		}{}
 		err = decoder.Decode(&er)
 		if err == nil {
