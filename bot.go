@@ -14,6 +14,7 @@ import (
 )
 
 var (
+	db     *sql.DB
 	bot    *tg.BotAPI
 	config map[string]interface{}
 	locale map[string]string
@@ -39,7 +40,8 @@ func init() {
 }
 
 func main() {
-	db, err := sql.Open(
+	var err error
+	db, err = sql.Open(
 		"mysql",
 		fmt.Sprintf("%s:%s@/%s", config["mysql_user"].(string), config["mysql_pass"].(string), config["mysql_db"].(string)),
 	)

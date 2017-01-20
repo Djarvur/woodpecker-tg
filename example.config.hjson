@@ -1,9 +1,10 @@
 {
+	endpoint: https://redmine.gitinsky.com
 	token: "" // Telegram bot token
-	webhook_set: "https://redmine.gitinsky.com"
-	webhook_listen: "/"
+	webhook_set: https://redmine.gitinsky.com // Redmine host
+	webhook_listen: /
 	webhook_serve: "0.0.0.0:8443"
-	mysql_user: root
-	mysql_pass: debug
-	mysql_db: dyatel
+	mysql_user: user
+	mysql_pass: password
+	mysql_db: sampledb
 }
