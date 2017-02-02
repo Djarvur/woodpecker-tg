@@ -1,110 +1,117 @@
 package main
 
 import (
-	"github.com/kirillDanshin/dlog"
+	"fmt"
+	"log"
+	"strconv"
+	"time"
+
+	"github.com/boltdb/bolt"
+	tg "github.com/go-telegram-bot-api/telegram-bot-api"
 	"github.com/mattn/go-redmine"
 )
 
-func checkUser(id int64) error {
-	reg, err := db.Prepare("INSERT IGNORE INTO `users` VALUES( ?, ?, ? )")
-	if err != nil {
-		return err
-	}
-	defer reg.Close()
+var db *bolt.DB
 
-	if _, err = reg.Exec(id, "", "connect"); err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func checkStatus(id int64) (string, error) {
-	if err := checkUser(id); err != nil {
-		return "", err
-	}
-
-	rows, err := db.Query("SELECT `status` FROM `users` WHERE `chat_id` = ?", id)
-	if err != nil {
-		return "", err
-	}
-	defer rows.Close()
-
-	var status string
-	for rows.Next() {
-		if err := rows.Scan(&status); err != nil {
-			return "", err
+func init() {
+	var err error
+	go func() {
+		db, err = bolt.Open("woodpecker.db", 0600, nil)
+		if err != nil {
+			log.Fatalln(err.Error())
 		}
-	}
-	if err := rows.Err(); err != nil {
-		return "", err
-	}
+		defer db.Close()
+		log.Println("BD opened")
+		select {}
+	}()
 
-	return status, nil
+	go func() {
+		ticker := time.NewTicker(time.Minute * 15)
+		for t := range ticker.C {
+			log.Println(t.String())
+			if err := db.View(func(tx *bolt.Tx) error {
+				return tx.ForEach(func(name []byte, b *bolt.Bucket) error {
+					id, _ := strconv.Atoi(string(name))
+					token := string(b.Get([]byte("token")))
+					offset, _ := strconv.Atoi(string(b.Get([]byte("offset"))))
+
+					go sendIssue(int64(id), token, offset)
+					return nil
+				})
+			}); err != nil {
+				log.Println(err.Error())
+			}
+		}
+	}()
 }
 
-func setToken(id int64, apikey string) (*redmine.User, error) {
-	if err := checkUser(id); err != nil {
-		return nil, err
-	}
-
-	user, err := getCurrentUser(config["endpoint"].(string), apikey)
+func sendIssue(id int64, token string, offset int) {
+	log.Println("====== SEND ISSUE ======")
+	log.Println("to", id)
+	log.Println("token", token)
+	issues, err := redmine.NewClient(cfg["endpoint"].(string), token).IssuesByFilter(&redmine.IssueFilter{AssignedToId: "me"})
 	if err != nil {
-		dlog.Ln("====== REDMINE FAIL ======")
-		return nil, err
+		log.Println(err.Error())
+		return
 	}
 
-	dlog.D(*user)
+	for _, issue := range issues {
+		updTime, _ := time.Parse(time.RFC3339, issue.UpdatedOn)
 
-	reg, err := db.Prepare("UPDATE `users` SET `token` = ?, `status` = ? WHERE `chat_id` = ?")
-	if err != nil {
-		dlog.Ln("====== OOPS ======")
-		return nil, err
+		// if time.Now().After(updTime.Add(time.Hour * 1)) {
+		text := fmt.Sprintf("%s\nLast updated: %s", issue.GetTitle(), updTime.String())
+		notify := tg.NewMessage(id, text)
+		notify.ReplyMarkup = tg.NewInlineKeyboardMarkup(
+			tg.NewInlineKeyboardRow(
+				tg.NewInlineKeyboardButtonURL(
+					fmt.Sprintf("Open issue#%d", issue.Id),
+					fmt.Sprintf("%s/issues/%d", cfg["endpoint"].(string), issue.Id),
+				),
+			),
+		)
+		bot.Send(notify)
+		// }
 	}
-	defer reg.Close()
-
-	if _, err := reg.Exec(apikey, "main", id); err != nil {
-		return nil, err
-	}
-
-	dlog.Ln("====== ITS OKAY ======")
-
-	return user, nil
 }
 
-func getToken(id int64) (string, error) {
-	rows, err := db.Query("SELECT `token` FROM `users` WHERE `chat_id` = ?", id)
+func CreateUser(id int, token string, offset int) (*redmine.User, error) {
+	usr, err := getCurrentUser(cfg["endpoint"].(string), token)
 	if err != nil {
-		return "", err
+		return usr, err
 	}
-	defer rows.Close()
 
+	err = db.Update(func(tx *bolt.Tx) error {
+		bkt, err := tx.CreateBucketIfNotExists([]byte(strconv.Itoa(id)))
+		if err != nil {
+			return err
+		}
+
+		bkt.Put([]byte("token"), []byte(token))
+		bkt.Put([]byte("offset"), []byte(string(offset)))
+		return nil
+	})
+	return usr, err
+}
+
+func getToken(id int) (string, error) {
 	var token string
-	for rows.Next() {
-		if err := rows.Scan(&token); err != nil {
-			return "", err
+	err := db.View(func(tx *bolt.Tx) error {
+		bkt := tx.Bucket([]byte(strconv.Itoa(id)))
+		if bkt == nil {
+			return fmt.Errorf("user don't exist")
 		}
-	}
-	if err := rows.Err(); err != nil {
-		return "", err
-	}
 
-	return token, nil
-}
+		token = string(bkt.Get([]byte("token")))
+		if token == "" {
+			return fmt.Errorf("user don't exist")
+		}
+		return nil
+	})
 
-func checkToken(id int64, apikey string) error {
-	if err := checkUser(id); err != nil {
-		return err
-	}
-
-	token, err := getToken(id)
-	if err != nil {
-		return err
+	if _, err := getCurrentUser(cfg["endpoint"].(string), token); err != nil {
+		return token, fmt.Errorf("invalid token")
 	}
 
-	if _, err := getCurrentUser(config["endpoint"].(string), token); err != nil {
-		return err
-	}
-
-	return nil
+	log.Println("TOKEN:", token)
+	return token, err
 }

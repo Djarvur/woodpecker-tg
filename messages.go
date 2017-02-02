@@ -1,93 +1,82 @@
 package main
 
 import (
-	"database/sql"
 	"fmt"
-	"strings"
+	"log"
+	// "strings"
 
 	tg "github.com/go-telegram-bot-api/telegram-bot-api"
-	"github.com/kirillDanshin/dlog"
+	// "github.com/mattn/go-redmine"
 )
 
-func messages(msg *tg.Message, db *sql.DB) {
-	status, err := checkStatus(msg.Chat.ID)
+func messages(msg *tg.Message) {
+	token, err := getToken(msg.From.ID)
 	if err != nil {
-		panic(err.Error())
+		log.Println(err.Error())
+		Start(msg)
+		return
 	}
-	dlog.Ln("status:", status)
+	log.Println("MSG TOKEN:", token)
 
-	if status != "connect" {
-		token, err := getToken(msg.Chat.ID)
-		if err != nil {
-			startCommand(msg)
-			return
+	/*
+		if msg.IsCommand() {
+			switch strings.ToLower(msg.Command()) {
+			case "offset":
+				if msg.CommandArguments() != "" {
+					if err := ChangeOffset(msg.From.ID, msg.CommandArguments()); err != nil {
+						reply := tg.NewMessage(msg.Chat.ID, "I don't understand you offset. Please, use only number.")
+						reply.ReplyToMessageID = msg.MessageID
+						bot.Send(reply)
+						return
+					}
+				}
+				reply := tg.NewMessage(msg.Chat.ID, "Please, use this command with number.")
+				reply.ReplyToMessageID = msg.MessageID
+				bot.Send(reply)
+			case "issues":
+				log.Println("====== GET ME ======")
+				issues, _ := redmine.NewClient(cfg["endpoint"].(string), token).IssuesByFilter(&redmine.IssueFilter{AssignedToId: "me"})
+				for _, issue := range issues {
+					log.Println(issue.GetTitle())
+				}
+			}
 		}
-		if err := checkToken(msg.Chat.ID, token); err != nil {
-			startCommand(msg)
-			return
-		}
-	}
+	*/
+}
 
+func Start(msg *tg.Message) {
+	_, off := msg.Time().Zone()
 	switch {
-	case status == "connect":
-		startCommand(msg)
-	case status == "main":
-		getMe(msg)
-	}
-}
-
-func getMe(msg *tg.Message) {
-	token, err := getToken(msg.Chat.ID)
-	if err != nil {
-		text := "Who am I? D:"
-		reply := tg.NewMessage(msg.Chat.ID, text)
-		bot.Send(reply)
-		return
-	}
-
-	user, err := getCurrentUser(config["endpoint"].(string), token)
-	if err != nil {
-		text := "Who are you? D:"
-		reply := tg.NewMessage(msg.Chat.ID, text)
-		bot.Send(reply)
-		return
-	}
-	text := fmt.Sprintf("Hello again, %s %s! \\(>^<)/\n\nYou birthday in Redmine: %s;\nYou last visit: %s;", user.Firstname, user.Lastname, user.CreatedOn, user.LatLoginOn)
-	reply := tg.NewMessage(msg.Chat.ID, text)
-	bot.Send(reply)
-	return
-}
-
-func startCommand(msg *tg.Message) {
-	if msg.IsCommand() == false && msg.Text != "" {
-		connectProccess(msg, msg.Text)
-		return
-	}
-
-	if msg.IsCommand() == true && strings.ToLower(msg.Command()) == "start" {
-		if msg.CommandArguments() == "" {
-			text := "Hello, stranger!\nFor beginning you need connect me to Redmine. Go to you profile page, find your personal API key and send me it."
-			reply := tg.NewMessage(msg.Chat.ID, text)
-			reply.ReplyMarkup = tg.ForceReply{true, false}
+	case msg.IsCommand():
+		if msg.CommandArguments() != "" {
+			usr, err := CreateUser(msg.From.ID, msg.CommandArguments(), off)
+			if err != nil {
+				reply := tg.NewMessage(msg.Chat.ID, "Invalid token. Try reset token in your profile page and send it again.")
+				reply.ReplyToMessageID = msg.MessageID
+				bot.Send(reply)
+				return
+			}
+			reply := tg.NewMessage(msg.Chat.ID, fmt.Sprintf("It's all, %s! Just wait notifications! :3", usr.Firstname))
+			reply.ReplyToMessageID = msg.MessageID
+			reply.ReplyMarkup = tg.ForceReply{false, false}
 			bot.Send(reply)
 			return
 		}
-		connectProccess(msg, msg.CommandArguments())
-		return
-	}
-}
-
-func connectProccess(msg *tg.Message, token string) {
-	user, err := setToken(msg.Chat.ID, token)
-	if err != nil {
-		text := "Invalid API key. Be sure what you send actual API key from your Redmine account and try send it again."
-		reply := tg.NewMessage(msg.Chat.ID, text)
-		reply.ReplyMarkup = tg.ForceReply{true, false}
+		reply := tg.NewMessage(msg.Chat.ID, "Hello, stranger!\nFor start you need send me your personal token. Go to your profile page, grab it from right sidebar and send it here. Easy!")
+		reply.ReplyToMessageID = msg.MessageID
+		reply.ReplyMarkup = tg.ForceReply{false, false}
 		bot.Send(reply)
-		return
+	default:
+		usr, err := CreateUser(msg.From.ID, msg.Text, off)
+		if err != nil {
+			reply := tg.NewMessage(msg.Chat.ID, "Invalid token. Try reset token in your profile page and send it again.")
+			reply.ReplyToMessageID = msg.MessageID
+			bot.Send(reply)
+			return
+		}
+		reply := tg.NewMessage(msg.Chat.ID, fmt.Sprintf("It's all, %s! Just wait notifications! :3", usr.Firstname))
+		reply.ReplyToMessageID = msg.MessageID
+		reply.ReplyMarkup = tg.ForceReply{false, false}
+		bot.Send(reply)
 	}
-	text := fmt.Sprintf("Authorized as %s %s.", user.Firstname, user.Lastname)
-	reply := tg.NewMessage(msg.Chat.ID, text)
-	bot.Send(reply)
-	return
 }
