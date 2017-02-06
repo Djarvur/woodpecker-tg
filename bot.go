@@ -4,11 +4,11 @@ import (
 	"flag"
 	"fmt"
 	"io/ioutil"
-	"net/http"
 
 	tg "github.com/go-telegram-bot-api/telegram-bot-api"
 	"github.com/hjson/hjson-go"
 	log "github.com/kirillDanshin/dlog"
+	f "github.com/valyala/fasthttp"
 )
 
 var (
@@ -43,7 +43,7 @@ func main() {
 	bot.Debug = *debug // More logs
 
 	updates := make(<-chan tg.Update)
-	updates, err := setUpdates(*webhook)
+	updates, err := SetUpdates(*webhook)
 	if err != nil {
 		panic(err.Error())
 	}
@@ -51,12 +51,12 @@ func main() {
 	// Updater
 	for update := range updates {
 		if update.Message != nil {
-			go messages(update.Message)
+			go Messages(update.Message)
 		}
 	}
 }
 
-func setUpdates(isWebhook bool) (<-chan tg.Update, error) {
+func SetUpdates(isWebhook bool) (<-chan tg.Update, error) {
 	bot.RemoveWebhook() // Just in case
 	if isWebhook == true {
 		if _, err := bot.SetWebhook(
@@ -66,7 +66,7 @@ func setUpdates(isWebhook bool) (<-chan tg.Update, error) {
 		); err != nil {
 			return nil, err
 		}
-		go http.ListenAndServe(cfg["webhook_serve"].(string), nil)
+		go f.ListenAndServe(cfg["webhook_serve"].(string), nil)
 		updates := bot.ListenForWebhook(
 			fmt.Sprint(cfg["webhook_listen"].(string), cfg["token"].(string)),
 		)

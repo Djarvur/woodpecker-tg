@@ -10,7 +10,7 @@ import (
 	"github.com/mattn/go-redmine"
 )
 
-func getCurrentUser(endpoint, apikey string) (*redmine.User, error) {
+func GetCurrentUser(endpoint, apikey string) (*redmine.User, error) {
 	c := redmine.NewClient(endpoint, apikey)
 	resp, err := c.Get(fmt.Sprint(endpoint, "/users/current.json?key=", apikey))
 	if err != nil {

@@ -1,5 +1,5 @@
 debug:
-	go build -tags "debug"
+	go build -tags="debug"
 
-prod:
+production:
 	go build

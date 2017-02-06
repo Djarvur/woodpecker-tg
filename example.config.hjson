@@ -4,7 +4,4 @@
 	webhook_set: https://redmine.gitinsky.com // Redmine host
 	webhook_listen: /
 	webhook_serve: "0.0.0.0:8443"
-	mysql_user: user
-	mysql_pass: password
-	mysql_db: sampledb
 }

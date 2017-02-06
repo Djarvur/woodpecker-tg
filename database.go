@@ -33,9 +33,8 @@ func init() {
 				return tx.ForEach(func(name []byte, b *bolt.Bucket) error {
 					id, _ := strconv.Atoi(string(name))
 					token := string(b.Get([]byte("token")))
-					offset, _ := strconv.Atoi(string(b.Get([]byte("offset"))))
 
-					go sendIssue(int64(id), token, offset)
+					go SendIssue(int64(id), token)
 					return nil
 				})
 			}); err != nil {
@@ -45,11 +44,12 @@ func init() {
 	}()
 }
 
-func sendIssue(id int64, token string, offset int) {
+func SendIssue(id int64, token string) {
 	log.Println("====== SEND ISSUE ======")
 	log.Println("to", id)
 	log.Println("token", token)
-	issues, err := redmine.NewClient(cfg["endpoint"].(string), token).IssuesByFilter(&redmine.IssueFilter{AssignedToId: "me"})
+	c := redmine.NewClient(cfg["endpoint"].(string), token)
+	issues, err := c.IssuesByFilter(&redmine.IssueFilter{AssignedToId: "me"})
 	if err != nil {
 		log.Println(err.Error())
 		return
@@ -58,24 +58,47 @@ func sendIssue(id int64, token string, offset int) {
 	for _, issue := range issues {
 		updTime, _ := time.Parse(time.RFC3339, issue.UpdatedOn)
 
-		// if time.Now().After(updTime.Add(time.Hour * 1)) {
-		text := fmt.Sprintf("%s\nLast updated: %s", issue.GetTitle(), updTime.String())
-		notify := tg.NewMessage(id, text)
-		notify.ReplyMarkup = tg.NewInlineKeyboardMarkup(
-			tg.NewInlineKeyboardRow(
-				tg.NewInlineKeyboardButtonURL(
-					fmt.Sprintf("Open issue#%d", issue.Id),
-					fmt.Sprintf("%s/issues/%d", cfg["endpoint"].(string), issue.Id),
+		if time.Now().UTC().After(updTime.Add(time.Hour * 48)) {
+			log.Println("====== WARNING! ======")
+
+			roles, _ := c.Memberships(issue.Project.Id)
+			for _, role := range roles {
+				if role.Id == 3 {
+					text := fmt.Sprintf("*This task has been fucked up!*\n%s\nLast updated: %s", issue.GetTitle(), updTime.String())
+					notify := tg.NewMessage(id, text)
+					notify.ParseMode = "markdown"
+					notify.ReplyMarkup = tg.NewInlineKeyboardMarkup(
+						tg.NewInlineKeyboardRow(
+							tg.NewInlineKeyboardButtonURL(
+								fmt.Sprintf("Open issue #%d", issue.Id),
+								fmt.Sprintf("%s/issues/%d", cfg["endpoint"].(string), issue.Id),
+							),
+						),
+					)
+					bot.Send(notify)
+				}
+			}
+		}
+
+		if time.Now().UTC().After(updTime.Add(time.Hour * 24)) {
+			log.Println("====== MORE THAN 24 HOURS ======")
+			text := fmt.Sprintf("%s\nLast updated: %s", issue.GetTitle(), updTime.String())
+			notify := tg.NewMessage(id, text)
+			notify.ReplyMarkup = tg.NewInlineKeyboardMarkup(
+				tg.NewInlineKeyboardRow(
+					tg.NewInlineKeyboardButtonURL(
+						fmt.Sprintf("Open issue #%d", issue.Id),
+						fmt.Sprintf("%s/issues/%d", cfg["endpoint"].(string), issue.Id),
+					),
 				),
-			),
-		)
-		bot.Send(notify)
-		// }
+			)
+			bot.Send(notify)
+		}
 	}
 }
 
 func CreateUser(id int, token string, offset int) (*redmine.User, error) {
-	usr, err := getCurrentUser(cfg["endpoint"].(string), token)
+	usr, err := GetCurrentUser(cfg["endpoint"].(string), token)
 	if err != nil {
 		return usr, err
 	}
@@ -93,7 +116,7 @@ func CreateUser(id int, token string, offset int) (*redmine.User, error) {
 	return usr, err
 }
 
-func getToken(id int) (string, error) {
+func GetToken(id int) (string, error) {
 	var token string
 	err := db.View(func(tx *bolt.Tx) error {
 		bkt := tx.Bucket([]byte(strconv.Itoa(id)))
@@ -108,7 +131,7 @@ func getToken(id int) (string, error) {
 		return nil
 	})
 
-	if _, err := getCurrentUser(cfg["endpoint"].(string), token); err != nil {
+	if _, err := GetCurrentUser(cfg["endpoint"].(string), token); err != nil {
 		return token, fmt.Errorf("invalid token")
 	}
 
