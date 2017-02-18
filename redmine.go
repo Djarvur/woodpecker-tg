@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"strings"
 
+	redmine "github.com/mattn/go-redmine"
 	// log "github.com/kirillDanshin/dlog"
-	"github.com/mattn/go-redmine"
 )
 
 func GetCurrentUser(endpoint, apikey string) (*redmine.User, error) {

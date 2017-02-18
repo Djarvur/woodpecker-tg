@@ -6,7 +6,7 @@ import (
 	"io/ioutil"
 
 	tg "github.com/go-telegram-bot-api/telegram-bot-api"
-	"github.com/hjson/hjson-go"
+	hjson "github.com/hjson/hjson-go"
 	log "github.com/kirillDanshin/dlog"
 	f "github.com/valyala/fasthttp"
 )
