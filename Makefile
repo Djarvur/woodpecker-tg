@@ -1,3 +1,5 @@
+# make не нужен
+
 debug:
 	go build -tags="debug"
 

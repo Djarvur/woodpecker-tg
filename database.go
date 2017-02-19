@@ -7,15 +7,21 @@ import (
 	"time"
 
 	"github.com/boltdb/bolt"
+
+	// FIXME: не надо работать с telegram из файла database.go
 	tg "github.com/go-telegram-bot-api/telegram-bot-api"
+
+	// FIXME: не надо работать с redmine из файла database.go
 	redmine "github.com/mattn/go-redmine"
 )
 
 var db *bolt.DB
 
+// FIXME: init() не место для инициализаци базы
 func init() {
 	var err error
 	go func() {
+		// FIXME: имя db-файла должно передаваться параметром командной строки или в конфиг-файле
 		db, err = bolt.Open("woodpecker.db", 0600, nil)
 		if err != nil {
 			log.Fatalln(err.Error())
@@ -34,6 +40,8 @@ func init() {
 					id, _ := strconv.Atoi(string(name))
 					token := string(b.Get([]byte("token")))
 
+					// TODO: целесообразно ли запускать по горутине на сообщение?
+					// вернее - не надо ли придумать им лимит, например, на атомиках
 					go SendIssue(int64(id), token)
 					return nil
 				})
@@ -44,10 +52,13 @@ func init() {
 	}()
 }
 
+// FIXME: не надо работать с redmine из файла database.go
+// FIXME: не надо работать с redmine из файла database.go
 func SendIssue(id int64, token string) {
 	log.Println("====== SEND ISSUE ======")
 	log.Println("to", id)
 	log.Println("token", token)
+	// FIXME: структура конфига должна быть типизованной
 	c := redmine.NewClient(cfg["endpoint"].(string), token)
 	issues, err := c.IssuesByFilter(&redmine.IssueFilter{AssignedToId: "me"})
 	if err != nil {
@@ -95,7 +106,16 @@ func SendIssue(id int64, token string) {
 			bot.Send(notify)
 		}
 	}
+
+	// TODO: вот тут, похоже, нужен еще один цикл, с поиском ни на кого не повешенных задач
+	// для пользователей, которые админы в своем проекте
+
 }
+
+// TODO: сомнительна полезность vault.db для такого малого количества данных.
+// возможно, надо сделать соответствующую структуру в памяти,
+// всасывать ее при старте
+// и дампить на диск при изменениях
 
 func CreateUser(id int, token string, offset int) (*redmine.User, error) {
 	usr, err := GetCurrentUser(cfg["endpoint"].(string), token)
@@ -126,11 +146,12 @@ func GetToken(id int) (string, error) {
 
 		token = string(bkt.Get([]byte("token")))
 		if token == "" {
-			return fmt.Errorf("user don't exist")
+			return fmt.Errorf("user '%v' doesn't exist", id)
 		}
 		return nil
 	})
 
+	// FIXME: структура конфига должна быть типизованной
 	if _, err := GetCurrentUser(cfg["endpoint"].(string), token); err != nil {
 		return token, fmt.Errorf("invalid token")
 	}
