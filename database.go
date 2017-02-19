@@ -8,7 +8,7 @@ import (
 
 	"github.com/boltdb/bolt"
 	tg "github.com/go-telegram-bot-api/telegram-bot-api"
-	"github.com/mattn/go-redmine"
+	redmine "github.com/mattn/go-redmine"
 )
 
 var db *bolt.DB
