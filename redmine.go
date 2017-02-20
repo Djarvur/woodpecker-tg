@@ -1,45 +1,42 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"strings"
 
 	redmine "github.com/mattn/go-redmine"
-	// log "github.com/kirillDanshin/dlog"
+	f "github.com/valyala/fasthttp"
 )
 
-func GetCurrentUser(endpoint, apikey string) (*redmine.User, error) {
-	c := redmine.NewClient(endpoint, apikey)
-	// FIXME: должно делаться через методы net/url
-	resp, err := c.Get(fmt.Sprint(endpoint, "/users/current.json?key=", apikey))
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
+type redmineUser struct {
+	User redmine.User `json:"user"`
+}
 
-	decoder := json.NewDecoder(resp.Body)
-	// FIXME: объявить тип явно
-	var r = struct {
-		User redmine.User `json:"user"`
-	}{}
-	if resp.StatusCode != 200 {
-		// FIXME: объявить тип явно
-		var er = struct {
-			Errors []string `json:"errors"`
-		}{}
-		err = decoder.Decode(&er)
+type redmineErrors struct {
+	Errors []string `json:"errors"`
+}
+
+func getCurrentUser(endpoint, apikey string) (*redmine.User, error) {
+	code, body, err := f.Get(nil, fmt.Sprint(endpoint, "/users/current.json?key=", apikey))
+	if err != nil {
+		return nil, err
+	}
+
+	decoder := json.NewDecoder(bytes.NewReader(body))
+	var rUsr redmineUser
+	if code != 200 {
+		var rErr redmineErrors
+		err = decoder.Decode(&rErr)
 		if err == nil {
-			err = errors.New(strings.Join(er.Errors, "\n"))
+			err = fmt.Errorf(strings.Join(rErr.Errors, "\n"))
 		}
-		// FIXME: а если декодер не справился?!
-		// Вообще, он скорее всего не справился - сомнительно, что json будет в любом ответе, кроме 200
 	} else {
-		err = decoder.Decode(&r)
+		err = decoder.Decode(&rUsr)
 	}
 	if err != nil {
 		return nil, err
 	}
-	return &r.User, nil
+	return &rUsr.User, nil
 }

@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/boltdb/bolt"
+	bolt "github.com/boltdb/bolt"
 
 	// FIXME: не надо работать с telegram из файла database.go
 	tg "github.com/go-telegram-bot-api/telegram-bot-api"
@@ -21,13 +21,12 @@ var db *bolt.DB
 func init() {
 	var err error
 	go func() {
-		// FIXME: имя db-файла должно передаваться параметром командной строки или в конфиг-файле
-		db, err = bolt.Open("woodpecker.db", 0600, nil)
+		db, err = bolt.Open(*dbFlag, 0600, nil)
 		if err != nil {
 			log.Fatalln(err.Error())
 		}
 		defer db.Close()
-		log.Println("BD opened")
+		log.Printf("DB %s opened", *dbFlag)
 		select {}
 	}()
 
@@ -38,11 +37,11 @@ func init() {
 			if err := db.View(func(tx *bolt.Tx) error {
 				return tx.ForEach(func(name []byte, b *bolt.Bucket) error {
 					id, _ := strconv.Atoi(string(name))
-					token := string(b.Get([]byte("token")))
+					tkn := string(b.Get([]byte("token")))
 
 					// TODO: целесообразно ли запускать по горутине на сообщение?
 					// вернее - не надо ли придумать им лимит, например, на атомиках
-					go SendIssue(int64(id), token)
+					go sendIssue(int64(id), tkn)
 					return nil
 				})
 			}); err != nil {
@@ -53,13 +52,12 @@ func init() {
 }
 
 // FIXME: не надо работать с redmine из файла database.go
-// FIXME: не надо работать с redmine из файла database.go
-func SendIssue(id int64, token string) {
+func sendIssue(id int64, token string) {
 	log.Println("====== SEND ISSUE ======")
 	log.Println("to", id)
 	log.Println("token", token)
-	// FIXME: структура конфига должна быть типизованной
-	c := redmine.NewClient(cfg["endpoint"].(string), token)
+
+	c := redmine.NewClient(endpoint, token)
 	issues, err := c.IssuesByFilter(&redmine.IssueFilter{AssignedToId: "me"})
 	if err != nil {
 		log.Println(err.Error())
@@ -82,7 +80,7 @@ func SendIssue(id int64, token string) {
 						tg.NewInlineKeyboardRow(
 							tg.NewInlineKeyboardButtonURL(
 								fmt.Sprintf("Open issue #%d", issue.Id),
-								fmt.Sprintf("%s/issues/%d", cfg["endpoint"].(string), issue.Id),
+								fmt.Sprintf("%s/issues/%d", endpoint, issue.Id),
 							),
 						),
 					)
@@ -99,7 +97,7 @@ func SendIssue(id int64, token string) {
 				tg.NewInlineKeyboardRow(
 					tg.NewInlineKeyboardButtonURL(
 						fmt.Sprintf("Open issue #%d", issue.Id),
-						fmt.Sprintf("%s/issues/%d", cfg["endpoint"].(string), issue.Id),
+						fmt.Sprintf("%s/issues/%d", endpoint, issue.Id),
 					),
 				),
 			)
@@ -117,8 +115,8 @@ func SendIssue(id int64, token string) {
 // всасывать ее при старте
 // и дампить на диск при изменениях
 
-func CreateUser(id int, token string, offset int) (*redmine.User, error) {
-	usr, err := GetCurrentUser(cfg["endpoint"].(string), token)
+func createUser(id int, tkn string, offset int) (*redmine.User, error) {
+	usr, err := getCurrentUser(endpoint, tkn)
 	if err != nil {
 		return usr, err
 	}
@@ -129,33 +127,31 @@ func CreateUser(id int, token string, offset int) (*redmine.User, error) {
 			return err
 		}
 
-		bkt.Put([]byte("token"), []byte(token))
+		bkt.Put([]byte("token"), []byte(tkn))
 		bkt.Put([]byte("offset"), []byte(string(offset)))
 		return nil
 	})
 	return usr, err
 }
 
-func GetToken(id int) (string, error) {
-	var token string
+func getToken(id int) (string, error) {
+	var tkn string
 	err := db.View(func(tx *bolt.Tx) error {
 		bkt := tx.Bucket([]byte(strconv.Itoa(id)))
 		if bkt == nil {
 			return fmt.Errorf("user don't exist")
 		}
 
-		token = string(bkt.Get([]byte("token")))
-		if token == "" {
+		tkn = string(bkt.Get([]byte("token")))
+		if tkn == "" {
 			return fmt.Errorf("user '%v' doesn't exist", id)
 		}
 		return nil
 	})
 
-	// FIXME: структура конфига должна быть типизованной
-	if _, err := GetCurrentUser(cfg["endpoint"].(string), token); err != nil {
-		return token, fmt.Errorf("invalid token")
+	if _, err := getCurrentUser(endpoint, tkn); err != nil {
+		return tkn, fmt.Errorf("invalid token")
 	}
 
-	log.Println("TOKEN:", token)
-	return token, err
+	return tkn, err
 }
