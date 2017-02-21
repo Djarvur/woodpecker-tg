@@ -5,4 +5,4 @@ telegram:
     listen: /
     serve: 0.0.0.0:8443
 redmine:
-  endpoint: https://woodpecker.redmine.com
+  endpoint: woodpecker.redmine.com
