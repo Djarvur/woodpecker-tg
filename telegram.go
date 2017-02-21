@@ -8,28 +8,27 @@ import (
 )
 
 func messages(msg *tg.Message) {
-	token, err := getToken(msg.From.ID)
+	usr, err := getUser(msg.From.ID)
 	if err != nil {
 		log.Println(err.Error())
 		start(msg)
 		return
 	}
-	log.Println("MSG TOKEN:", token)
+	log.Println("MSG TOKEN:", usr.Token)
 }
 
 func start(msg *tg.Message) {
-	_, off := msg.Time().Zone()
 	switch {
 	case msg.IsCommand():
 		if msg.CommandArguments() != "" {
-			usr, err := createUser(msg.From.ID, msg.CommandArguments(), off)
+			usr, err := createUser(msg.From.ID, msg.CommandArguments())
 			if err != nil {
 				reply := tg.NewMessage(msg.Chat.ID, "Invalid token. Try reset token in your profile page and send it again.")
 				reply.ReplyToMessageID = msg.MessageID
 				bot.Send(reply)
 				return
 			}
-			reply := tg.NewMessage(msg.Chat.ID, fmt.Sprintf("It's all, %s! Just wait notifications! :3", usr.Firstname))
+			reply := tg.NewMessage(usr.Telegram, "It's all! Just wait notifications! :3")
 			reply.ReplyToMessageID = msg.MessageID
 			reply.ReplyMarkup = tg.ForceReply{
 				ForceReply: false,
@@ -46,14 +45,14 @@ func start(msg *tg.Message) {
 		}
 		bot.Send(reply)
 	default:
-		usr, err := createUser(msg.From.ID, msg.Text, off)
+		usr, err := createUser(msg.From.ID, msg.Text)
 		if err != nil {
 			reply := tg.NewMessage(msg.Chat.ID, "Invalid token. Try reset token in your profile page and send it again.")
 			reply.ReplyToMessageID = msg.MessageID
 			bot.Send(reply)
 			return
 		}
-		reply := tg.NewMessage(msg.Chat.ID, fmt.Sprintf("It's all, %s! Just wait notifications! :3", usr.Firstname))
+		reply := tg.NewMessage(usr.Telegram, "It's all! Just wait notifications! :3")
 		reply.ReplyToMessageID = msg.MessageID
 		reply.ReplyMarkup = tg.ForceReply{
 			ForceReply: false,
@@ -61,4 +60,18 @@ func start(msg *tg.Message) {
 		}
 		bot.Send(reply)
 	}
+}
+
+func notification(to int64, text string, issue int) {
+	notify := tg.NewMessage(to, text)
+	notify.ParseMode = "markdown"
+	notify.ReplyMarkup = tg.NewInlineKeyboardMarkup(
+		tg.NewInlineKeyboardRow(
+			tg.NewInlineKeyboardButtonURL(
+				fmt.Sprintf("Open issue #%d", issue),
+				fmt.Sprintf("%s/issues/%d", fmt.Sprint(scheme, "://", endpoint), issue),
+			),
+		),
+	)
+	bot.Send(notify)
 }

@@ -7,13 +7,13 @@ import (
 	"time"
 
 	bolt "github.com/boltdb/bolt"
-
-	// FIXME: не надо работать с telegram из файла database.go
-	tg "github.com/go-telegram-bot-api/telegram-bot-api"
-
-	// FIXME: не надо работать с redmine из файла database.go
-	redmine "github.com/mattn/go-redmine"
 )
+
+type dbUser struct {
+	Redmine  int
+	Telegram int64
+	Token    string
+}
 
 var db *bolt.DB
 
@@ -36,12 +36,19 @@ func init() {
 			log.Println(t.String())
 			if err := db.View(func(tx *bolt.Tx) error {
 				return tx.ForEach(func(name []byte, b *bolt.Bucket) error {
-					id, _ := strconv.Atoi(string(name))
-					tkn := string(b.Get([]byte("token")))
+					id, err := strconv.Atoi(string(name))
+					if err != nil {
+						return err
+					}
+
+					usr, err := getUser(id)
+					if err != nil {
+						return err
+					}
 
 					// TODO: целесообразно ли запускать по горутине на сообщение?
 					// вернее - не надо ли придумать им лимит, например, на атомиках
-					go sendIssue(int64(id), tkn)
+					go checkIssues(usr)
 					return nil
 				})
 			}); err != nil {
@@ -51,74 +58,15 @@ func init() {
 	}()
 }
 
-// FIXME: не надо работать с redmine из файла database.go
-func sendIssue(id int64, token string) {
-	log.Println("====== SEND ISSUE ======")
-	log.Println("to", id)
-	log.Println("token", token)
-
-	c := redmine.NewClient(endpoint, token)
-	issues, err := c.IssuesByFilter(&redmine.IssueFilter{AssignedToId: "me"})
-	if err != nil {
-		log.Println(err.Error())
-		return
-	}
-
-	for _, issue := range issues {
-		updTime, _ := time.Parse(time.RFC3339, issue.UpdatedOn)
-
-		if time.Now().UTC().After(updTime.Add(time.Hour * 48)) {
-			log.Println("====== WARNING! ======")
-
-			roles, _ := c.Memberships(issue.Project.Id)
-			for _, role := range roles {
-				if role.Id == 3 {
-					text := fmt.Sprintf("*This task has been fucked up!*\n%s\nLast updated: %s", issue.GetTitle(), updTime.String())
-					notify := tg.NewMessage(id, text)
-					notify.ParseMode = "markdown"
-					notify.ReplyMarkup = tg.NewInlineKeyboardMarkup(
-						tg.NewInlineKeyboardRow(
-							tg.NewInlineKeyboardButtonURL(
-								fmt.Sprintf("Open issue #%d", issue.Id),
-								fmt.Sprintf("%s/issues/%d", endpoint, issue.Id),
-							),
-						),
-					)
-					bot.Send(notify)
-				}
-			}
-		}
-
-		if time.Now().UTC().After(updTime.Add(time.Hour * 24)) {
-			log.Println("====== MORE THAN 24 HOURS ======")
-			text := fmt.Sprintf("%s\nLast updated: %s", issue.GetTitle(), updTime.String())
-			notify := tg.NewMessage(id, text)
-			notify.ReplyMarkup = tg.NewInlineKeyboardMarkup(
-				tg.NewInlineKeyboardRow(
-					tg.NewInlineKeyboardButtonURL(
-						fmt.Sprintf("Open issue #%d", issue.Id),
-						fmt.Sprintf("%s/issues/%d", endpoint, issue.Id),
-					),
-				),
-			)
-			bot.Send(notify)
-		}
-	}
-
-	// TODO: вот тут, похоже, нужен еще один цикл, с поиском ни на кого не повешенных задач
-	// для пользователей, которые админы в своем проекте
-
-}
-
 // TODO: сомнительна полезность vault.db для такого малого количества данных.
 // возможно, надо сделать соответствующую структуру в памяти,
 // всасывать ее при старте
 // и дампить на диск при изменениях
 
-func createUser(id int, tkn string, offset int) (*redmine.User, error) {
-	usr, err := getCurrentUser(endpoint, tkn)
+func createUser(id int, tkn string) (*dbUser, error) {
+	r, err := getCurrentUser(fmt.Sprint(scheme, "://", endpoint), tkn)
 	if err != nil {
-		return usr, err
+		return nil, err
 	}
 
 	err = db.Update(func(tx *bolt.Tx) error {
@@ -127,31 +75,42 @@ func createUser(id int, tkn string, offset int) (*redmine.User, error) {
 			return err
 		}
 
+		bkt.Put([]byte("redmine"), []byte(string(r.Id)))
+		bkt.Put([]byte("telegram"), []byte(string(id)))
 		bkt.Put([]byte("token"), []byte(tkn))
-		bkt.Put([]byte("offset"), []byte(string(offset)))
 		return nil
 	})
-	return usr, err
+
+	return &dbUser{r.Id, int64(id), tkn}, err
 }
 
-func getToken(id int) (string, error) {
-	var tkn string
+func getUser(id int) (*dbUser, error) {
+	var usr dbUser
 	err := db.View(func(tx *bolt.Tx) error {
 		bkt := tx.Bucket([]byte(strconv.Itoa(id)))
 		if bkt == nil {
-			return fmt.Errorf("user don't exist")
+			return fmt.Errorf("user %v doesn't exist", id)
 		}
 
-		tkn = string(bkt.Get([]byte("token")))
-		if tkn == "" {
-			return fmt.Errorf("user '%v' doesn't exist", id)
+		r, err := strconv.Atoi(string(bkt.Get([]byte("redmine"))))
+		if err != nil {
+			return err
 		}
+
+		t, err := strconv.Atoi(string(bkt.Get([]byte("telegram"))))
+		if err != nil {
+			return err
+		}
+
+		usr.Redmine = r
+		usr.Telegram = int64(t)
+		usr.Token = string(bkt.Get([]byte("token")))
 		return nil
 	})
 
-	if _, err := getCurrentUser(endpoint, tkn); err != nil {
-		return tkn, fmt.Errorf("invalid token")
+	if _, err := getCurrentUser(fmt.Sprint(scheme, "://", endpoint), usr.Token); err != nil {
+		return nil, fmt.Errorf("invalid token")
 	}
 
-	return tkn, err
+	return &usr, err
 }

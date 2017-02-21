@@ -8,21 +8,24 @@ import (
 )
 
 var (
-	cfg      *config.Config
-	endpoint string
-	token    string
-	set      string
-	listen   string
-	serve    string
+	cfg                                         *config.Config
+	endpoint, token, set, listen, serve, scheme string
 
 	configFlag  = flag.String("config", "config.yml", "load custom config file")
 	dbFlag      = flag.String("db", "woodpecker.db", "select custom db file")
 	debugFlag   = flag.Bool("debug", false, "enable debug logs")
 	webhookFlag = flag.Bool("webhook", false, "enable webhook mode")
+	schemeFlag  = flag.Bool("https", false, "enable https requests")
 )
 
 func init() {
 	flag.Parse()
+
+	if *schemeFlag {
+		scheme = "https"
+	} else {
+		scheme = "http"
+	}
 
 	var err error
 	cfg, err = config.ParseYamlFile(*configFlag)
