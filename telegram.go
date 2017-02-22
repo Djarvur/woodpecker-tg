@@ -8,27 +8,24 @@ import (
 )
 
 func messages(msg *tg.Message) {
-	usr, err := getUser(msg.From.ID)
-	if err != nil {
+	if _, err := getUser(msg.From.ID); err != nil {
 		log.Println(err.Error())
 		start(msg)
 		return
 	}
-	log.Println("MSG TOKEN:", usr.Token)
 }
 
 func start(msg *tg.Message) {
 	switch {
 	case msg.IsCommand():
 		if msg.CommandArguments() != "" {
-			usr, err := createUser(msg.From.ID, msg.CommandArguments())
-			if err != nil {
+			if _, err := createUser(msg.From.ID, msg.CommandArguments()); err != nil {
 				reply := tg.NewMessage(msg.Chat.ID, "Invalid token. Try reset token in your profile page and send it again.")
 				reply.ReplyToMessageID = msg.MessageID
 				bot.Send(reply)
 				return
 			}
-			reply := tg.NewMessage(usr.Telegram, "It's all! Just wait notifications! :3")
+			reply := tg.NewMessage(msg.Chat.ID, "It's all! Just wait notifications! :3")
 			reply.ReplyToMessageID = msg.MessageID
 			reply.ReplyMarkup = tg.ForceReply{
 				ForceReply: false,
@@ -45,14 +42,13 @@ func start(msg *tg.Message) {
 		}
 		bot.Send(reply)
 	default:
-		usr, err := createUser(msg.From.ID, msg.Text)
-		if err != nil {
+		if _, err := createUser(msg.From.ID, msg.Text); err != nil {
 			reply := tg.NewMessage(msg.Chat.ID, "Invalid token. Try reset token in your profile page and send it again.")
 			reply.ReplyToMessageID = msg.MessageID
 			bot.Send(reply)
 			return
 		}
-		reply := tg.NewMessage(usr.Telegram, "It's all! Just wait notifications! :3")
+		reply := tg.NewMessage(msg.Chat.ID, "It's all! Just wait notifications! :3")
 		reply.ReplyToMessageID = msg.MessageID
 		reply.ReplyMarkup = tg.ForceReply{
 			ForceReply: false,
@@ -62,16 +58,20 @@ func start(msg *tg.Message) {
 	}
 }
 
-func notification(to int64, text string, issue int) {
-	notify := tg.NewMessage(to, text)
+func notification(to int, text string, issue int) {
+	notify := tg.NewMessage(int64(to), text)
 	notify.ParseMode = "markdown"
-	notify.ReplyMarkup = tg.NewInlineKeyboardMarkup(
-		tg.NewInlineKeyboardRow(
-			tg.NewInlineKeyboardButtonURL(
-				fmt.Sprintf("Open issue #%d", issue),
-				fmt.Sprintf("%s/issues/%d", fmt.Sprint(scheme, "://", endpoint), issue),
+	if issue != -1 {
+		notify.ReplyMarkup = tg.NewInlineKeyboardMarkup(
+			tg.NewInlineKeyboardRow(
+				tg.NewInlineKeyboardButtonURL(
+					fmt.Sprintf("Open issue #%d", issue),
+					fmt.Sprintf("%s/issues/%d", fmt.Sprint(scheme, "://", endpoint), issue),
+				),
 			),
-		),
-	)
-	bot.Send(notify)
+		)
+	}
+	if _, err := bot.Send(notify); err != nil {
+		log.Println(err.Error())
+	}
 }

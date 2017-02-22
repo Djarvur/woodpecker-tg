@@ -11,7 +11,7 @@ import (
 
 type dbUser struct {
 	Redmine  int
-	Telegram int64
+	Telegram int
 	Token    string
 }
 
@@ -31,7 +31,7 @@ func init() {
 	}()
 
 	go func() {
-		ticker := time.NewTicker(time.Minute * 15)
+		ticker := time.NewTicker(time.Second * 30)
 		for t := range ticker.C {
 			log.Println(t.String())
 			if err := db.View(func(tx *bolt.Tx) error {
@@ -46,8 +46,6 @@ func init() {
 						return err
 					}
 
-					// TODO: целесообразно ли запускать по горутине на сообщение?
-					// вернее - не надо ли придумать им лимит, например, на атомиках
 					go checkIssues(usr)
 					return nil
 				})
@@ -64,8 +62,10 @@ func init() {
 // и дампить на диск при изменениях
 
 func createUser(id int, tkn string) (*dbUser, error) {
-	r, err := getCurrentUser(fmt.Sprint(scheme, "://", endpoint), tkn)
+	log.Println("====== CREATE USER ======")
+	r, err := getCurrentUser(tkn)
 	if err != nil {
+		log.Println(err.Error())
 		return nil, err
 	}
 
@@ -75,16 +75,23 @@ func createUser(id int, tkn string) (*dbUser, error) {
 			return err
 		}
 
-		bkt.Put([]byte("redmine"), []byte(string(r.Id)))
-		bkt.Put([]byte("telegram"), []byte(string(id)))
+		bkt.Put([]byte("redmine"), []byte(strconv.Itoa(r.Id)))
+		bkt.Put([]byte("telegram"), []byte(strconv.Itoa(id)))
 		bkt.Put([]byte("token"), []byte(tkn))
 		return nil
 	})
 
-	return &dbUser{r.Id, int64(id), tkn}, err
+	usr := &dbUser{
+		Redmine:  r.Id,
+		Telegram: id,
+		Token:    tkn,
+	}
+
+	return usr, err
 }
 
 func getUser(id int) (*dbUser, error) {
+	log.Println("====== GET USER ======")
 	var usr dbUser
 	err := db.View(func(tx *bolt.Tx) error {
 		bkt := tx.Bucket([]byte(strconv.Itoa(id)))
@@ -92,25 +99,22 @@ func getUser(id int) (*dbUser, error) {
 			return fmt.Errorf("user %v doesn't exist", id)
 		}
 
-		r, err := strconv.Atoi(string(bkt.Get([]byte("redmine"))))
-		if err != nil {
-			return err
-		}
-
-		t, err := strconv.Atoi(string(bkt.Get([]byte("telegram"))))
-		if err != nil {
-			return err
-		}
-
-		usr.Redmine = r
-		usr.Telegram = int64(t)
+		usr.Redmine, _ = strconv.Atoi(string(bkt.Get([]byte("redmine"))))
+		usr.Telegram, _ = strconv.Atoi(string(bkt.Get([]byte("telegram"))))
 		usr.Token = string(bkt.Get([]byte("token")))
 		return nil
 	})
 
-	if _, err := getCurrentUser(fmt.Sprint(scheme, "://", endpoint), usr.Token); err != nil {
+	if _, err := getCurrentUser(usr.Token); err != nil {
 		return nil, fmt.Errorf("invalid token")
 	}
 
 	return &usr, err
+}
+
+func removeUser(id int) error {
+	log.Println("====== REMOVE USER ======")
+	return db.Update(func(tx *bolt.Tx) error {
+		return tx.DeleteBucket([]byte(strconv.Itoa(id)))
+	})
 }

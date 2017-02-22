@@ -21,13 +21,16 @@ type redmineErrors struct {
 	Errors []string `json:"errors"`
 }
 
-func getCurrentUser(endpoint, apikey string) (*redmine.User, error) {
+func getCurrentUser(apikey string) (*redmine.User, error) {
 	req := &url.URL{
-		Scheme:   scheme,
-		Host:     endpoint,
-		Path:     "users/current.json",
-		RawQuery: fmt.Sprint("key=", apikey),
+		Scheme: scheme,
+		Host:   endpoint,
+		Path:   "users/current.json",
 	}
+
+	q := req.Query()
+	q.Set("key", apikey)
+	req.RawQuery = q.Encode()
 
 	code, body, err := f.Get(nil, req.String())
 	if err != nil {
@@ -53,39 +56,71 @@ func getCurrentUser(endpoint, apikey string) (*redmine.User, error) {
 
 func checkIssues(usr *dbUser) {
 	log.Println("====== SEND ISSUE ======")
-	log.Println("to", usr.Telegram)
-	log.Println("token", usr.Token)
+
+	if _, err := getCurrentUser(usr.Token); err != nil {
+		text := "Invalid token. Try reset token in your profile page and send it again.\nP.S.: But now I going to sleep. Zzz..."
+		notification(usr.Telegram, text, -1)
+		go removeUser(usr.Telegram)
+		return
+	}
 
 	c := redmine.NewClient(fmt.Sprint(scheme, "://", endpoint), usr.Token)
-	issues, err := c.IssuesByFilter(&redmine.IssueFilter{AssignedToId: "me"})
+	issues, err := c.Issues()
 	if err != nil {
 		log.Println(err.Error())
 		return
 	}
 
 	for _, issue := range issues {
-		updTime, _ := time.Parse(time.RFC3339, issue.UpdatedOn)
+		go checkIssue(usr, issue)
+	}
+}
 
-		if time.Now().UTC().After(updTime.Add(time.Hour * 48)) {
-			log.Println("====== WARNING! ======")
+func checkIssue(usr *dbUser, issue redmine.Issue) {
+	updTime, err := time.Parse(time.RFC3339, issue.UpdatedOn)
+	if err != nil {
+		log.Println(err.Error())
+		return
+	}
 
-			roles, _ := c.Memberships(issue.Project.Id)
-			for _, role := range roles {
+	if issue.AssignedTo == nil {
+		log.Printf("issue #%d is not assigned to anyone!", issue.Id)
+		c := redmine.NewClient(fmt.Sprint(scheme, "://", endpoint), usr.Token)
+		mships, err := c.Memberships(issue.Project.Id)
+		if err != nil {
+			log.Println(err.Error())
+		}
+
+		for _, mship := range mships {
+			for _, role := range mship.Roles {
 				if role.Id == 3 {
-					text := fmt.Sprintf("*This task has been fucked up!*\n%s\nLast updated: %s", issue.GetTitle(), updTime.String())
+					text := fmt.Sprintf("⚠️ *This task is not assigned to anyone!*\n%s\nLast updated: %s", issue.GetTitle(), updTime.String())
 					notification(usr.Telegram, text, issue.Id)
 				}
 			}
 		}
-
-		if time.Now().UTC().After(updTime.Add(time.Hour * 24)) {
-			log.Println("====== MORE THAN 24 HOURS ======")
-			text := fmt.Sprintf("%s\nLast updated: %s", issue.GetTitle(), updTime.String())
-			notification(usr.Telegram, text, issue.Id)
-		}
+		return
 	}
 
-	// TODO: вот тут, похоже, нужен еще один цикл, с поиском ни на кого не повешенных задач
-	// для пользователей, которые админы в своем проекте
+	if issue.AssignedTo.Id != usr.Redmine {
+		log.Printf("issue #%d is not assigned to user %d", issue.Id, usr.Redmine)
+		return
+	}
 
+	log.Printf("issue #%d is assigned to user %d...", issue.Id, usr.Redmine)
+
+	if time.Now().UTC().After(updTime.Add(time.Hour * 24)) {
+		log.Println("====== MORE THAN 24 HOURS ======")
+		text := fmt.Sprintf("_Use_ `/issue #%d sample text` _for comment issue and reset timer._\n%s\nLast updated: %s", issue.Id, issue.GetTitle(), updTime.String())
+		notification(usr.Telegram, text, issue.Id)
+	}
+
+	if time.Now().UTC().After(updTime.Add(time.Hour * 48)) {
+		log.Println("====== WARNING! ======")
+		// TODO: Send notify for all managers who have access to current issue assigned to current token 9_6
+		/*
+			text := fmt.Sprintf("⚠️ *THIS TASK HAS BEEN FUCKED UP!*\n%s\nLast updated: %s", issue.GetTitle(), updTime.String())
+			notification(usr.Telegram, text, issue.Id)
+		*/
+	}
 }
