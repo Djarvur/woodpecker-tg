@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/kirillDanshin/dlog"
 	redmine "github.com/mattn/go-redmine"
 	f "github.com/valyala/fasthttp"
 )
@@ -59,7 +60,7 @@ func checkIssues(usr *dbUser) {
 
 	if _, err := getCurrentUser(usr.Token); err != nil {
 		text := "Invalid token. Try reset token in your profile page and send it again.\nP.S.: But now I going to sleep. Zzz..."
-		notification(usr.Telegram, text, -1)
+		message(usr.Telegram, text, -1)
 		go removeUser(usr.Telegram)
 		return
 	}
@@ -95,7 +96,7 @@ func checkIssue(usr *dbUser, issue redmine.Issue) {
 			for _, role := range mship.Roles {
 				if role.Id == 3 {
 					text := fmt.Sprintf("⚠️ *This task is not assigned to anyone!*\n%s\nLast updated: %s", issue.GetTitle(), updTime.String())
-					notification(usr.Telegram, text, issue.Id)
+					message(usr.Telegram, text, issue.Id)
 				}
 			}
 		}
@@ -112,7 +113,7 @@ func checkIssue(usr *dbUser, issue redmine.Issue) {
 	if time.Now().UTC().After(updTime.Add(time.Hour * 24)) {
 		log.Println("====== MORE THAN 24 HOURS ======")
 		text := fmt.Sprintf("_Use_ `/issue #%d sample text` _for comment issue and reset timer._\n%s\nLast updated: %s", issue.Id, issue.GetTitle(), updTime.String())
-		notification(usr.Telegram, text, issue.Id)
+		message(usr.Telegram, text, issue.Id)
 	}
 
 	if time.Now().UTC().After(updTime.Add(time.Hour * 48)) {
@@ -120,7 +121,33 @@ func checkIssue(usr *dbUser, issue redmine.Issue) {
 		// TODO: Send notify for all managers who have access to current issue assigned to current token 9_6
 		/*
 			text := fmt.Sprintf("⚠️ *THIS TASK HAS BEEN FUCKED UP!*\n%s\nLast updated: %s", issue.GetTitle(), updTime.String())
-			notification(usr.Telegram, text, issue.Id)
+			message(usr.Telegram, text, issue.Id)
 		*/
 	}
+}
+
+func updateIssue(usr *dbUser, id int, note string) error {
+	log.Println("====== UPDATE ISSUE ======")
+	c := redmine.NewClient(fmt.Sprint(scheme, "://", endpoint), usr.Token)
+
+	old, err := c.Issue(id)
+	if err != nil {
+		return err
+	}
+	dlog.F("old issue: %#v", old.Priority)
+
+	issue := &redmine.Issue{
+		Id:       id,           // Указатель на конкретный issue
+		Notes:    note,         // Тот самый комментарий
+		Subject:  old.Subject,  // Окей, как скажешь
+		Priority: old.Priority, // ???
+	}
+
+	// Окей, может так?
+	// issue.Priority.Name = old.Priority.Name
+	// issue.Priority.Id = old.Priority.Id
+
+	dlog.F("issue: %#v", issue.Priority)
+
+	return c.UpdateIssue(*issue)
 }

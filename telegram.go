@@ -3,15 +3,54 @@ package main
 import (
 	"fmt"
 	"log"
+	"strconv"
+	"strings"
 
 	tg "github.com/go-telegram-bot-api/telegram-bot-api"
 )
 
 func messages(msg *tg.Message) {
-	if _, err := getUser(msg.From.ID); err != nil {
+	usr, err := getUser(msg.From.ID)
+	if err != nil {
 		log.Println(err.Error())
 		start(msg)
 		return
+	}
+
+	if !msg.IsCommand() {
+		return
+	}
+
+	switch strings.ToLower(msg.Command()) {
+	case "issue":
+		args := strings.SplitN(msg.CommandArguments(), " ", 2)
+
+		if !strings.HasPrefix(args[0], "#") {
+			text := "Please, use this command with issue id (`/issue #123`)."
+			message(msg.From.ID, text, -1)
+			return
+		}
+		iIDs := strings.TrimPrefix(args[0], "#")
+
+		iID, err := strconv.Atoi(iIDs)
+		if err != nil {
+			text := "Issue ID must be as int (`0-9999...`)."
+			message(msg.From.ID, text, -1)
+			return
+		}
+
+		if len(args) <= 1 {
+			text := "Please, use this command with issue id *AND* text of message (`/issue #123 Sample text`)."
+			message(msg.From.ID, text, -1)
+			return
+		}
+
+		note := args[1]
+		log.Println("id:", iID)
+		log.Println("note:", note)
+		if err := updateIssue(usr, iID, note); err != nil {
+			log.Println(err.Error())
+		}
 	}
 }
 
@@ -58,7 +97,7 @@ func start(msg *tg.Message) {
 	}
 }
 
-func notification(to int, text string, issue int) {
+func message(to int, text string, issue int) {
 	notify := tg.NewMessage(int64(to), text)
 	notify.ParseMode = "markdown"
 	if issue != -1 {
