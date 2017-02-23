@@ -31,7 +31,7 @@ func init() {
 	}()
 
 	go func() {
-		ticker := time.NewTicker(time.Second * 30)
+		ticker := time.NewTicker(time.Minute * 15)
 		for t := range ticker.C {
 			log.Println(t.String())
 			if err := db.View(func(tx *bolt.Tx) error {

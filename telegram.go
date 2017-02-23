@@ -34,13 +34,13 @@ func messages(msg *tg.Message) {
 
 		iID, err := strconv.Atoi(iIDs)
 		if err != nil {
-			text := "Issue ID must be as int (`0-9999...`)."
+			text := "Issue ID must be as intenfer (`0-9999...`)."
 			message(msg.From.ID, text, -1)
 			return
 		}
 
 		if len(args) <= 1 {
-			text := "Please, use this command with issue id *AND* text of message (`/issue #123 Sample text`)."
+			text := "Please, use this command with issue id *AND* text of comment (`/issue #123 Sample text`)."
 			message(msg.From.ID, text, -1)
 			return
 		}
@@ -50,7 +50,13 @@ func messages(msg *tg.Message) {
 		log.Println("note:", note)
 		if err := updateIssue(usr, iID, note); err != nil {
 			log.Println(err.Error())
+			text := fmt.Sprintf("Commenting process interrupted by the following errors:\n_%s_\n\nTry repeat this action later, or contact to manager.", err.Error())
+			message(msg.From.ID, text, -1)
+			return
 		}
+		text := fmt.Sprintf("Your comment: `%s`\nTo issue #%d has been sent!\n\nYou are free from it for the next 24 hours.", note, iID)
+		message(msg.From.ID, text, iID)
+		return
 	}
 }
 

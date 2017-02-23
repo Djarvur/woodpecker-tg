@@ -9,7 +9,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/kirillDanshin/dlog"
 	redmine "github.com/mattn/go-redmine"
 	f "github.com/valyala/fasthttp"
 )
@@ -130,24 +129,13 @@ func updateIssue(usr *dbUser, id int, note string) error {
 	log.Println("====== UPDATE ISSUE ======")
 	c := redmine.NewClient(fmt.Sprint(scheme, "://", endpoint), usr.Token)
 
-	old, err := c.Issue(id)
+	issue, err := c.Issue(id)
 	if err != nil {
 		return err
 	}
-	dlog.F("old issue: %#v", old.Priority)
 
-	issue := &redmine.Issue{
-		Id:       id,           // Указатель на конкретный issue
-		Notes:    note,         // Тот самый комментарий
-		Subject:  old.Subject,  // Окей, как скажешь
-		Priority: old.Priority, // ???
-	}
-
-	// Окей, может так?
-	// issue.Priority.Name = old.Priority.Name
-	// issue.Priority.Id = old.Priority.Id
-
-	dlog.F("issue: %#v", issue.Priority)
+	issue.Notes = note
+	issue.PriorityId = issue.Priority.Id
 
 	return c.UpdateIssue(*issue)
 }
