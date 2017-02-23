@@ -2,7 +2,7 @@ package main
 
 import (
 	"fmt"
-	"log"
+	_ "log" // just to safisfy Sublime Go plugin
 	"strconv"
 	"time"
 

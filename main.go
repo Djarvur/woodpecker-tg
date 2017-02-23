@@ -2,24 +2,35 @@ package main
 
 import (
 	"fmt"
-	"log"
+	"time"
 
 	tg "github.com/go-telegram-bot-api/telegram-bot-api"
+	"github.com/powerman/structlog"
 	f "github.com/valyala/fasthttp"
 )
 
-var bot *tg.BotAPI
+var (
+	err error
+	bot *tg.BotAPI
+	log = structlog.New()
+)
 
-func init() {
-	var err error
+func main() {
+	structlog.DefaultLogger.
+		AppendPrefixKeys(structlog.KeyTime, structlog.KeySource).
+		SetSuffixKeys(structlog.KeyStack).
+		SetTimeValFormat("2006-01-02_15:04:05.999999")
+
+	time.Local = time.UTC
+
+	initConfig()
+
 	bot, err = tg.NewBotAPI(token)
 	if err != nil {
 		log.Fatalln(err.Error())
 	}
 	log.Print("Authorized as @", bot.Self.UserName)
-}
 
-func main() {
 	bot.Debug = *debugFlag
 
 	var updates <-chan tg.Update

@@ -2,7 +2,7 @@ package main
 
 import (
 	"flag"
-	"log"
+	_ "log" // just to safisfy Sublime Go plugin
 
 	config "github.com/olebedev/config"
 )
@@ -18,7 +18,7 @@ var (
 	schemeFlag  = flag.Bool("https", false, "enable https requests")
 )
 
-func init() {
+func initConfig() {
 	flag.Parse()
 
 	if *schemeFlag {

@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"log"
+	_ "log" // just to safisfy Sublime Go plugin
 	"net/url"
 	"strings"
 	"time"
