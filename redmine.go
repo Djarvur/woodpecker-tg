@@ -73,6 +73,7 @@ func checkIssues(usr *dbUser) {
 
 	for _, issue := range issues {
 		if brk := checkIssue(usr, issue); brk == true {
+			log.Println("BREAK")
 			break
 		}
 	}
@@ -111,13 +112,6 @@ func checkIssue(usr *dbUser, issue redmine.Issue) bool {
 
 	log.Printf("issue #%d is assigned to user %d...", issue.Id, usr.Redmine)
 
-	if time.Now().UTC().After(updTime.Add(time.Hour * 24)) {
-		log.Println("====== MORE THAN 24 HOURS ======")
-		text := fmt.Sprintf("_Use_ `/update sample text` _for comment issue or_ `/skip` _for skip._\n%s\nLast updated: %s", issue.GetTitle(), updTime.String())
-		message(usr.Telegram, text, issue.Id)
-		go changeIssue(usr, issue.Id)
-	}
-
 	if time.Now().UTC().After(updTime.Add(time.Hour * 48)) {
 		log.Println("====== WARNING! ======")
 		// TODO: Send notify for all managers who have access to current issue assigned to current token 9_6
@@ -126,7 +120,16 @@ func checkIssue(usr *dbUser, issue redmine.Issue) bool {
 			message(usr.Telegram, text, issue.Id)
 		*/
 	}
-	return true
+
+	if time.Now().UTC().After(updTime.Add(time.Hour * 24)) {
+		log.Println("====== MORE THAN 24 HOURS ======")
+		text := fmt.Sprintf("_Use_ `/update sample text` _for comment issue or_ `/skip` _for skip._\n%s\nLast updated: %s", issue.GetTitle(), updTime.String())
+		message(usr.Telegram, text, issue.Id)
+		go changeIssue(usr, issue.Id)
+		return true
+	}
+
+	return false
 }
 
 func updateIssue(usr *dbUser, note string) error {
