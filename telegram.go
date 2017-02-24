@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	_ "log" // just to safisfy Sublime Go plugin
-	"strconv"
 	"strings"
 
 	tg "github.com/go-telegram-bot-api/telegram-bot-api"
@@ -22,41 +21,10 @@ func messages(msg *tg.Message) {
 	}
 
 	switch strings.ToLower(msg.Command()) {
-	case "issue":
-		args := strings.SplitN(msg.CommandArguments(), " ", 2)
-
-		if !strings.HasPrefix(args[0], "#") {
-			text := "Please, use this command with issue id (`/issue #123`)."
-			message(msg.From.ID, text, -1)
-			return
-		}
-		iIDs := strings.TrimPrefix(args[0], "#")
-
-		iID, err := strconv.Atoi(iIDs)
-		if err != nil {
-			text := "Issue ID must be as intenfer (`0-9999...`)."
-			message(msg.From.ID, text, -1)
-			return
-		}
-
-		if len(args) <= 1 {
-			text := "Please, use this command with issue id *AND* text of comment (`/issue #123 Sample text`)."
-			message(msg.From.ID, text, -1)
-			return
-		}
-
-		note := args[1]
-		log.Println("id:", iID)
-		log.Println("note:", note)
-		if err := updateIssue(usr, iID, note); err != nil {
-			log.Println(err.Error())
-			text := fmt.Sprintf("Commenting process interrupted by the following errors:\n_%s_\n\nTry repeat this action later, or contact to manager.", err.Error())
-			message(msg.From.ID, text, -1)
-			return
-		}
-		text := fmt.Sprintf("Your comment: `%s`\nTo issue #%d has been sent!\n\nYou are free from it for the next 24 hours.", note, iID)
-		message(msg.From.ID, text, iID)
-		return
+	case "update":
+		update(usr, msg)
+	case "skip":
+		skip(usr, msg)
 	}
 }
 
@@ -101,6 +69,36 @@ func start(msg *tg.Message) {
 		}
 		bot.Send(reply)
 	}
+}
+
+func update(usr *dbUser, msg *tg.Message) {
+	if msg.CommandArguments() == "" {
+		text := fmt.Sprintf("Please, use this command with some text", err.Error())
+		message(msg.From.ID, text, -1)
+		return
+	}
+
+	if err := updateIssue(usr, msg.CommandArguments()); err != nil {
+		log.Println(err.Error())
+		text := fmt.Sprintf("Commenting process interrupted by the following errors:\n_%s_\n\nTry repeat this action later, or contact to manager.", err.Error())
+		message(msg.From.ID, text, -1)
+		return
+	}
+	text := fmt.Sprintf("Your comment: `%s`\nTo issue #%d has been sent!\n\nYou are free from it for the next 24 hours.", msg.CommandArguments(), usr.Task)
+	message(msg.From.ID, text, usr.Task)
+	go changeIssue(usr, 0)
+}
+
+func skip(usr *dbUser, msg *tg.Message) {
+	if err := updateIssue(usr, "Skipped"); err != nil {
+		log.Println(err.Error())
+		text := fmt.Sprintf("Commenting process interrupted by the following errors:\n_%s_\n\nTry repeat this action later, or contact to manager.", err.Error())
+		message(msg.From.ID, text, -1)
+		return
+	}
+	text := fmt.Sprintf("Issue #%d has been skipped.\n\nYou are free from it for the next 24 hours.", usr.Task)
+	message(msg.From.ID, text, usr.Task)
+	go changeIssue(usr, 0)
 }
 
 func message(to int, text string, issue int) {

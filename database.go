@@ -13,6 +13,7 @@ type dbUser struct {
 	Redmine  int
 	Telegram int
 	Token    string
+	Task     int
 }
 
 var db *bolt.DB
@@ -77,6 +78,7 @@ func createUser(id int, tkn string) (*dbUser, error) {
 
 		bkt.Put([]byte("redmine"), []byte(strconv.Itoa(r.Id)))
 		bkt.Put([]byte("telegram"), []byte(strconv.Itoa(id)))
+		bkt.Put([]byte("task"), []byte(strconv.Itoa(r.Id)))
 		bkt.Put([]byte("token"), []byte(tkn))
 		return nil
 	})
@@ -101,6 +103,7 @@ func getUser(id int) (*dbUser, error) {
 
 		usr.Redmine, _ = strconv.Atoi(string(bkt.Get([]byte("redmine"))))
 		usr.Telegram, _ = strconv.Atoi(string(bkt.Get([]byte("telegram"))))
+		usr.Task, _ = strconv.Atoi(string(bkt.Get([]byte("task"))))
 		usr.Token = string(bkt.Get([]byte("token")))
 		return nil
 	})
@@ -116,5 +119,12 @@ func removeUser(id int) error {
 	log.Println("====== REMOVE USER ======")
 	return db.Update(func(tx *bolt.Tx) error {
 		return tx.DeleteBucket([]byte(strconv.Itoa(id)))
+	})
+}
+
+func changeIssue(usr *dbUser, id int) error {
+	return db.Batch(func(tx *bolt.Tx) error {
+		bkt := tx.Bucket([]byte(strconv.Itoa(usr.Telegram)))
+		return bkt.Put([]byte("task"), []byte(strconv.Itoa(id)))
 	})
 }

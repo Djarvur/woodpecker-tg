@@ -72,15 +72,17 @@ func checkIssues(usr *dbUser) {
 	}
 
 	for _, issue := range issues {
-		go checkIssue(usr, issue)
+		if brk := checkIssue(usr, issue); brk == true {
+			break
+		}
 	}
 }
 
-func checkIssue(usr *dbUser, issue redmine.Issue) {
+func checkIssue(usr *dbUser, issue redmine.Issue) bool {
 	updTime, err := time.Parse(time.RFC3339, issue.UpdatedOn)
 	if err != nil {
 		log.Println(err.Error())
-		return
+		return false
 	}
 
 	if issue.AssignedTo == nil {
@@ -99,20 +101,21 @@ func checkIssue(usr *dbUser, issue redmine.Issue) {
 				}
 			}
 		}
-		return
+		return false
 	}
 
 	if issue.AssignedTo.Id != usr.Redmine {
 		log.Printf("issue #%d is not assigned to user %d", issue.Id, usr.Redmine)
-		return
+		return false
 	}
 
 	log.Printf("issue #%d is assigned to user %d...", issue.Id, usr.Redmine)
 
 	if time.Now().UTC().After(updTime.Add(time.Hour * 24)) {
 		log.Println("====== MORE THAN 24 HOURS ======")
-		text := fmt.Sprintf("_Use_ `/issue #%d sample text` _for comment issue and reset timer._\n%s\nLast updated: %s", issue.Id, issue.GetTitle(), updTime.String())
+		text := fmt.Sprintf("_Use_ `/update sample text` _for comment issue or_ `/skip` _for skip._\n%s\nLast updated: %s", issue.GetTitle(), updTime.String())
 		message(usr.Telegram, text, issue.Id)
+		go changeIssue(usr, issue.Id)
 	}
 
 	if time.Now().UTC().After(updTime.Add(time.Hour * 48)) {
@@ -123,18 +126,23 @@ func checkIssue(usr *dbUser, issue redmine.Issue) {
 			message(usr.Telegram, text, issue.Id)
 		*/
 	}
+	return true
 }
 
-func updateIssue(usr *dbUser, id int, note string) error {
+func updateIssue(usr *dbUser, note string) error {
+	if usr.Task == 0 {
+		return fmt.Errorf("not selected task")
+	}
+
 	log.Println("====== UPDATE ISSUE ======")
 	c := redmine.NewClient(fmt.Sprint(scheme, "://", endpoint), usr.Token)
 
-	issue, err := c.Issue(id)
+	issue, err := c.Issue(usr.Task)
 	if err != nil {
 		return err
 	}
 
-	issue.Notes = note
+	issue.Notes = fmt.Sprintf("%s via @%s", note, bot.Self.UserName)
 	issue.PriorityId = issue.Priority.Id
 
 	return c.UpdateIssue(*issue)
