@@ -24,5 +24,6 @@ _testmain.go
 *.prof
 
 # Custom
+woodpecker
 woodpecker.db
-config.hjson
+config.yml

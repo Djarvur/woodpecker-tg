@@ -1,45 +1,152 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
-	"errors"
 	"fmt"
+	_ "log" // just to safisfy Sublime Go plugin
+	"net/url"
 	"strings"
+	"time"
 
 	redmine "github.com/mattn/go-redmine"
-	// log "github.com/kirillDanshin/dlog"
+	f "github.com/valyala/fasthttp"
 )
 
-func GetCurrentUser(endpoint, apikey string) (*redmine.User, error) {
-	c := redmine.NewClient(endpoint, apikey)
-	// FIXME: должно делаться через методы net/url
-	resp, err := c.Get(fmt.Sprint(endpoint, "/users/current.json?key=", apikey))
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
+type redmineUser struct {
+	User redmine.User `json:"user"`
+}
 
-	decoder := json.NewDecoder(resp.Body)
-	// FIXME: объявить тип явно
-	var r = struct {
-		User redmine.User `json:"user"`
-	}{}
-	if resp.StatusCode != 200 {
-		// FIXME: объявить тип явно
-		var er = struct {
-			Errors []string `json:"errors"`
-		}{}
-		err = decoder.Decode(&er)
+type redmineErrors struct {
+	Errors []string `json:"errors"`
+}
+
+func getCurrentUser(apikey string) (*redmine.User, error) {
+	req := &url.URL{
+		Scheme: scheme,
+		Host:   endpoint,
+		Path:   "users/current.json",
+	}
+
+	q := req.Query()
+	q.Set("key", apikey)
+	req.RawQuery = q.Encode()
+
+	code, body, err := f.Get(nil, req.String())
+	if err != nil {
+		return nil, err
+	}
+
+	decoder := json.NewDecoder(bytes.NewReader(body))
+	var rUsr redmineUser
+	if code != 200 {
+		var rErr redmineErrors
+		err = decoder.Decode(&rErr)
 		if err == nil {
-			err = errors.New(strings.Join(er.Errors, "\n"))
+			err = fmt.Errorf(strings.Join(rErr.Errors, "\n"))
 		}
-		// FIXME: а если декодер не справился?!
-		// Вообще, он скорее всего не справился - сомнительно, что json будет в любом ответе, кроме 200
 	} else {
-		err = decoder.Decode(&r)
+		err = decoder.Decode(&rUsr)
 	}
 	if err != nil {
 		return nil, err
 	}
-	return &r.User, nil
+	return &rUsr.User, nil
+}
+
+func checkIssues(usr *dbUser) {
+	log.Println("====== SEND ISSUE ======")
+
+	if _, err := getCurrentUser(usr.Token); err != nil {
+		text := "Invalid token. Try reset token in your profile page and send it again.\nP.S.: But now I going to sleep. Zzz..."
+		message(usr.Telegram, text, -1)
+		go removeUser(usr.Telegram)
+		return
+	}
+
+	c := redmine.NewClient(fmt.Sprint(scheme, "://", endpoint), usr.Token)
+	issues, err := c.Issues()
+	if err != nil {
+		log.Println(err.Error())
+		return
+	}
+
+	for _, issue := range issues {
+		if brk := checkIssue(usr, issue); brk == true {
+			log.Println("BREAK")
+			break
+		}
+	}
+}
+
+func checkIssue(usr *dbUser, issue redmine.Issue) bool {
+	updTime, err := time.Parse(time.RFC3339, issue.UpdatedOn)
+	if err != nil {
+		log.Println(err.Error())
+		return false
+	}
+
+	if issue.AssignedTo == nil {
+		log.Printf("issue #%d is not assigned to anyone!", issue.Id)
+		c := redmine.NewClient(fmt.Sprint(scheme, "://", endpoint), usr.Token)
+		mships, err := c.Memberships(issue.Project.Id)
+		if err != nil {
+			log.Println(err.Error())
+		}
+
+		for _, mship := range mships {
+			for _, role := range mship.Roles {
+				if role.Id == 3 {
+					text := fmt.Sprintf("⚠️ *This task is not assigned to anyone!*\n%s\nLast updated: %s", issue.GetTitle(), updTime.String())
+					message(usr.Telegram, text, issue.Id)
+				}
+			}
+		}
+		return false
+	}
+
+	if issue.AssignedTo.Id != usr.Redmine {
+		log.Printf("issue #%d is not assigned to user %d", issue.Id, usr.Redmine)
+		return false
+	}
+
+	log.Printf("issue #%d is assigned to user %d...", issue.Id, usr.Redmine)
+
+	if time.Now().UTC().After(updTime.Add(time.Hour * 48)) {
+		log.Println("====== WARNING! ======")
+		// TODO: Send notify for all managers who have access to current issue assigned to current token 9_6
+		/*
+			text := fmt.Sprintf("⚠️ *THIS TASK HAS BEEN FUCKED UP!*\n%s\nLast updated: %s", issue.GetTitle(), updTime.String())
+			message(usr.Telegram, text, issue.Id)
+		*/
+	}
+
+	if time.Now().UTC().After(updTime.Add(time.Hour * 24)) {
+		log.Println("====== MORE THAN 24 HOURS ======")
+		text := fmt.Sprintf("_Use_ `/update sample text` _for comment issue or_ `/skip` _for skip._\n%s\nLast updated: %s", issue.GetTitle(), updTime.String())
+		message(usr.Telegram, text, issue.Id)
+		go changeIssue(usr, issue.Id)
+		return true
+	}
+
+	return false
+}
+
+func updateIssue(usr *dbUser, note string) error {
+	if usr.Task == 0 {
+		return fmt.Errorf("not selected task")
+	}
+
+	log.Println("====== UPDATE ISSUE ======")
+	c := redmine.NewClient(fmt.Sprint(scheme, "://", endpoint), usr.Token)
+
+	issue, err := c.Issue(usr.Task)
+	if err != nil {
+		return err
+	}
+
+	issue.Notes = fmt.Sprintf("%s via @%s", note, bot.Self.UserName)
+	issue.PriorityId = issue.Priority.Id
+
+	return c.UpdateIssue(*issue)
 }

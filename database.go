@@ -2,18 +2,19 @@ package main
 
 import (
 	"fmt"
-	"log"
+	_ "log" // just to safisfy Sublime Go plugin
 	"strconv"
 	"time"
 
-	"github.com/boltdb/bolt"
-
-	// FIXME: не надо работать с telegram из файла database.go
-	tg "github.com/go-telegram-bot-api/telegram-bot-api"
-
-	// FIXME: не надо работать с redmine из файла database.go
-	redmine "github.com/mattn/go-redmine"
+	bolt "github.com/boltdb/bolt"
 )
+
+type dbUser struct {
+	Redmine  int
+	Telegram int
+	Token    string
+	Task     int
+}
 
 var db *bolt.DB
 
@@ -21,13 +22,12 @@ var db *bolt.DB
 func init() {
 	var err error
 	go func() {
-		// FIXME: имя db-файла должно передаваться параметром командной строки или в конфиг-файле
-		db, err = bolt.Open("woodpecker.db", 0600, nil)
+		db, err = bolt.Open(*dbFlag, 0600, nil)
 		if err != nil {
 			log.Fatalln(err.Error())
 		}
 		defer db.Close()
-		log.Println("BD opened")
+		log.Printf("DB %s opened", *dbFlag)
 		select {}
 	}()
 
@@ -37,12 +37,17 @@ func init() {
 			log.Println(t.String())
 			if err := db.View(func(tx *bolt.Tx) error {
 				return tx.ForEach(func(name []byte, b *bolt.Bucket) error {
-					id, _ := strconv.Atoi(string(name))
-					token := string(b.Get([]byte("token")))
+					id, err := strconv.Atoi(string(name))
+					if err != nil {
+						return err
+					}
 
-					// TODO: целесообразно ли запускать по горутине на сообщение?
-					// вернее - не надо ли придумать им лимит, например, на атомиках
-					go SendIssue(int64(id), token)
+					usr, err := getUser(id)
+					if err != nil {
+						return err
+					}
+
+					go checkIssues(usr)
 					return nil
 				})
 			}); err != nil {
@@ -52,75 +57,17 @@ func init() {
 	}()
 }
 
-// FIXME: не надо работать с redmine из файла database.go
-// FIXME: не надо работать с redmine из файла database.go
-func SendIssue(id int64, token string) {
-	log.Println("====== SEND ISSUE ======")
-	log.Println("to", id)
-	log.Println("token", token)
-	// FIXME: структура конфига должна быть типизованной
-	c := redmine.NewClient(cfg["endpoint"].(string), token)
-	issues, err := c.IssuesByFilter(&redmine.IssueFilter{AssignedToId: "me"})
-	if err != nil {
-		log.Println(err.Error())
-		return
-	}
-
-	for _, issue := range issues {
-		updTime, _ := time.Parse(time.RFC3339, issue.UpdatedOn)
-
-		if time.Now().UTC().After(updTime.Add(time.Hour * 48)) {
-			log.Println("====== WARNING! ======")
-
-			roles, _ := c.Memberships(issue.Project.Id)
-			for _, role := range roles {
-				if role.Id == 3 {
-					text := fmt.Sprintf("*This task has been fucked up!*\n%s\nLast updated: %s", issue.GetTitle(), updTime.String())
-					notify := tg.NewMessage(id, text)
-					notify.ParseMode = "markdown"
-					notify.ReplyMarkup = tg.NewInlineKeyboardMarkup(
-						tg.NewInlineKeyboardRow(
-							tg.NewInlineKeyboardButtonURL(
-								fmt.Sprintf("Open issue #%d", issue.Id),
-								fmt.Sprintf("%s/issues/%d", cfg["endpoint"].(string), issue.Id),
-							),
-						),
-					)
-					bot.Send(notify)
-				}
-			}
-		}
-
-		if time.Now().UTC().After(updTime.Add(time.Hour * 24)) {
-			log.Println("====== MORE THAN 24 HOURS ======")
-			text := fmt.Sprintf("%s\nLast updated: %s", issue.GetTitle(), updTime.String())
-			notify := tg.NewMessage(id, text)
-			notify.ReplyMarkup = tg.NewInlineKeyboardMarkup(
-				tg.NewInlineKeyboardRow(
-					tg.NewInlineKeyboardButtonURL(
-						fmt.Sprintf("Open issue #%d", issue.Id),
-						fmt.Sprintf("%s/issues/%d", cfg["endpoint"].(string), issue.Id),
-					),
-				),
-			)
-			bot.Send(notify)
-		}
-	}
-
-	// TODO: вот тут, похоже, нужен еще один цикл, с поиском ни на кого не повешенных задач
-	// для пользователей, которые админы в своем проекте
-
-}
-
 // TODO: сомнительна полезность vault.db для такого малого количества данных.
 // возможно, надо сделать соответствующую структуру в памяти,
 // всасывать ее при старте
 // и дампить на диск при изменениях
 
-func CreateUser(id int, token string, offset int) (*redmine.User, error) {
-	usr, err := GetCurrentUser(cfg["endpoint"].(string), token)
+func createUser(id int, tkn string) (*dbUser, error) {
+	log.Println("====== CREATE USER ======")
+	r, err := getCurrentUser(tkn)
 	if err != nil {
-		return usr, err
+		log.Println(err.Error())
+		return nil, err
 	}
 
 	err = db.Update(func(tx *bolt.Tx) error {
@@ -129,33 +76,55 @@ func CreateUser(id int, token string, offset int) (*redmine.User, error) {
 			return err
 		}
 
-		bkt.Put([]byte("token"), []byte(token))
-		bkt.Put([]byte("offset"), []byte(string(offset)))
+		bkt.Put([]byte("redmine"), []byte(strconv.Itoa(r.Id)))
+		bkt.Put([]byte("telegram"), []byte(strconv.Itoa(id)))
+		bkt.Put([]byte("task"), []byte(strconv.Itoa(r.Id)))
+		bkt.Put([]byte("token"), []byte(tkn))
 		return nil
 	})
+
+	usr := &dbUser{
+		Redmine:  r.Id,
+		Telegram: id,
+		Token:    tkn,
+	}
+
 	return usr, err
 }
 
-func GetToken(id int) (string, error) {
-	var token string
+func getUser(id int) (*dbUser, error) {
+	log.Println("====== GET USER ======")
+	var usr dbUser
 	err := db.View(func(tx *bolt.Tx) error {
 		bkt := tx.Bucket([]byte(strconv.Itoa(id)))
 		if bkt == nil {
-			return fmt.Errorf("user don't exist")
+			return fmt.Errorf("user %v doesn't exist", id)
 		}
 
-		token = string(bkt.Get([]byte("token")))
-		if token == "" {
-			return fmt.Errorf("user '%v' doesn't exist", id)
-		}
+		usr.Redmine, _ = strconv.Atoi(string(bkt.Get([]byte("redmine"))))
+		usr.Telegram, _ = strconv.Atoi(string(bkt.Get([]byte("telegram"))))
+		usr.Task, _ = strconv.Atoi(string(bkt.Get([]byte("task"))))
+		usr.Token = string(bkt.Get([]byte("token")))
 		return nil
 	})
 
-	// FIXME: структура конфига должна быть типизованной
-	if _, err := GetCurrentUser(cfg["endpoint"].(string), token); err != nil {
-		return token, fmt.Errorf("invalid token")
+	if _, err := getCurrentUser(usr.Token); err != nil {
+		return nil, fmt.Errorf("invalid token")
 	}
 
-	log.Println("TOKEN:", token)
-	return token, err
+	return &usr, err
+}
+
+func removeUser(id int) error {
+	log.Println("====== REMOVE USER ======")
+	return db.Update(func(tx *bolt.Tx) error {
+		return tx.DeleteBucket([]byte(strconv.Itoa(id)))
+	})
+}
+
+func changeIssue(usr *dbUser, id int) error {
+	return db.Batch(func(tx *bolt.Tx) error {
+		bkt := tx.Bucket([]byte(strconv.Itoa(usr.Telegram)))
+		return bkt.Put([]byte("task"), []byte(strconv.Itoa(id)))
+	})
 }

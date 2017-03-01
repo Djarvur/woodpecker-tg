@@ -1,0 +1,8 @@
+telegram:
+  token: 012345678:ABCDef1gH2jkl-M3n4oPQRs56tUvWxYz789
+  webhook:
+    set: https://site.com
+    listen: /
+    serve: 0.0.0.0:8443
+redmine:
+  endpoint: woodpecker.redmine.com
