@@ -40,6 +40,9 @@ func messages(msg *tg.Message) {
 	switch strings.ToLower(msg.Command()) {
 	case "start":
 		start(msg)
+	case "help":
+		text := "`/start [token]` - reconnect account by new token;\n`/help` - show this message;\n`/update [text]` - send note to last task and go to next;\n`/skip` - skip last task and go to next;\n`/last` - get info about your last task;\n`/ping` - 🤔;\n`[any text]` - get current status of your redmine connection;"
+		message(usr.Telegram, text, -1)
 	case "update":
 		update(usr, msg)
 	case "skip":

@@ -11,7 +11,7 @@ import (
 	"time"
 
 	redmine "github.com/mattn/go-redmine"
-	f "github.com/valyala/fasthttp"
+	http "github.com/valyala/fasthttp"
 )
 
 type redmineUser struct {
@@ -38,7 +38,7 @@ func getCurrentUser(apikey string) (*redmine.User, error) {
 	q.Set("key", apikey)
 	req.RawQuery = q.Encode()
 
-	code, body, err := f.Get(nil, req.String())
+	code, body, err := http.Get(nil, req.String())
 	if err != nil {
 		return nil, err
 	}
@@ -87,7 +87,7 @@ func getIssues(apikey string, assignedTo string, offset, limit int, timestamp *t
 
 	log.Println(req.String())
 
-	code, body, err := f.Get(nil, req.String())
+	code, body, err := http.Get(nil, req.String())
 	if err != nil {
 		return nil, err
 	}
