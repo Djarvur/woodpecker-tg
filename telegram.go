@@ -24,10 +24,15 @@ func messages(msg *tg.Message) {
 	}
 
 	if !msg.IsCommand() {
+		reply := tg.NewMessage(msg.Chat.ID, "Your connection to Redmine is correctly, all right. 👌🏻")
+		reply.ReplyToMessageID = msg.MessageID
+		bot.Send(reply)
 		return
 	}
 
 	switch strings.ToLower(msg.Command()) {
+	case "start":
+		start(msg)
 	case "update":
 		update(usr, msg)
 	case "skip":
@@ -36,6 +41,7 @@ func messages(msg *tg.Message) {
 }
 
 func start(msg *tg.Message) {
+	log.Println("====== START COMMAND ======")
 	switch {
 	case msg.IsCommand():
 		if msg.CommandArguments() != "" {
@@ -79,6 +85,7 @@ func start(msg *tg.Message) {
 }
 
 func update(usr *dbUser, msg *tg.Message) {
+	log.Println("====== UPDATE COMMAND ======")
 	if msg.CommandArguments() == "" {
 		text := fmt.Sprintf("Please, use this command with some text", err.Error())
 		message(msg.From.ID, text, -1)
@@ -97,6 +104,7 @@ func update(usr *dbUser, msg *tg.Message) {
 }
 
 func skip(usr *dbUser, msg *tg.Message) {
+	log.Println("====== SKIP COMMAND ======")
 	if err := updateIssue(usr, "Skipped"); err != nil {
 		log.Println(err.Error())
 		text := fmt.Sprintf("Commenting process interrupted by the following errors:\n_%s_\n\nTry repeat this action later, or contact to manager.", err.Error())
@@ -109,6 +117,7 @@ func skip(usr *dbUser, msg *tg.Message) {
 }
 
 func message(to int, text string, issue int) {
+	log.Println("====== MESSAGE ======")
 	notify := tg.NewMessage(int64(to), text)
 	notify.ParseMode = "markdown"
 	if issue != -1 {
