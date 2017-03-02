@@ -70,7 +70,7 @@ func createUser(id int, tkn string) (*dbUser, error) {
 		return nil, err
 	}
 
-	err = db.Update(func(tx *bolt.Tx) error {
+	err = db.Batch(func(tx *bolt.Tx) error {
 		bkt, err := tx.CreateBucketIfNotExists([]byte(strconv.Itoa(id)))
 		if err != nil {
 			return err
@@ -95,7 +95,7 @@ func createUser(id int, tkn string) (*dbUser, error) {
 func getUser(id int) (*dbUser, error) {
 	log.Println("====== GET USER ======")
 	var usr dbUser
-	err := db.View(func(tx *bolt.Tx) error {
+	if err := db.View(func(tx *bolt.Tx) error {
 		bkt := tx.Bucket([]byte(strconv.Itoa(id)))
 		if bkt == nil {
 			return fmt.Errorf("user %v doesn't exist", id)
@@ -106,9 +106,14 @@ func getUser(id int) (*dbUser, error) {
 		usr.Task, _ = strconv.Atoi(string(bkt.Get([]byte("task"))))
 		usr.Token = string(bkt.Get([]byte("token")))
 		return nil
-	})
+	}); err != nil {
+		return nil, err
+	}
 
 	if _, err := getCurrentUser(usr.Token); err != nil {
+		text := "Your token is broken. Please, send me new valid token."
+		go message(id, text, -1)
+		go removeUser(id)
 		return nil, fmt.Errorf("invalid token")
 	}
 
@@ -117,7 +122,7 @@ func getUser(id int) (*dbUser, error) {
 
 func removeUser(id int) error {
 	log.Println("====== REMOVE USER ======")
-	return db.Update(func(tx *bolt.Tx) error {
+	return db.Batch(func(tx *bolt.Tx) error {
 		return tx.DeleteBucket([]byte(strconv.Itoa(id)))
 	})
 }
