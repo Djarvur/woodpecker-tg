@@ -9,6 +9,13 @@ import (
 )
 
 func messages(msg *tg.Message) {
+	if msg.IsCommand() && strings.ToLower(msg.Command()) == "ping" {
+		reply := tg.NewMessage(msg.Chat.ID, "pong")
+		reply.ReplyToMessageID = msg.MessageID
+		bot.Send(reply)
+		return
+	}
+
 	usr, err := getUser(msg.From.ID)
 	if err != nil {
 		log.Println(err.Error())
