@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	_ "log" // just to safisfy Sublime Go plugin
+	"net/url"
 	"strings"
 
 	tg "github.com/go-telegram-bot-api/telegram-bot-api"
@@ -24,9 +25,15 @@ func messages(msg *tg.Message) {
 	}
 
 	if !msg.IsCommand() {
-		reply := tg.NewMessage(msg.Chat.ID, "Your connection to Redmine is correctly, all right. 👌🏻")
-		reply.ReplyToMessageID = msg.MessageID
-		bot.Send(reply)
+		task := usr.Task
+		text := "Your connection to Redmine is correctly, all right. 👌🏻"
+		if task != 0 {
+			text += "\n*P.S.:* You last task pinned to this message."
+		} else {
+			task = -1
+		}
+
+		message(usr.Telegram, text, usr.Task)
 		return
 	}
 
@@ -37,6 +44,8 @@ func messages(msg *tg.Message) {
 		update(usr, msg)
 	case "skip":
 		skip(usr, msg)
+	case "last":
+		checkIssues(usr)
 	}
 }
 
@@ -94,30 +103,41 @@ func update(usr *dbUser, msg *tg.Message) {
 
 	if err := updateIssue(usr, msg.CommandArguments()); err != nil {
 		log.Println(err.Error())
-		text := fmt.Sprintf("Commenting process interrupted by the following errors:\n_%s_\n\nTry repeat this action later, or contact to manager.", err.Error())
+		text := fmt.Sprintf("Commenting process interrupted by the following errors:\n_%s_\nTry repeat this action later, or contact to manager.", err.Error())
 		message(msg.From.ID, text, -1)
 		return
 	}
-	text := fmt.Sprintf("Your comment: `%s`\nTo issue #%d has been sent!\n\nYou are free from it for the next 24 hours.", msg.CommandArguments(), usr.Task)
+	text := fmt.Sprintf("Your comment: `%s`\nTo issue #%d has been sent!\nYou are free from it for the next 24 hours.", msg.CommandArguments(), usr.Task)
 	message(msg.From.ID, text, usr.Task)
 	go changeIssue(usr, 0)
+
+	go checkIssues(usr)
 }
 
 func skip(usr *dbUser, msg *tg.Message) {
 	log.Println("====== SKIP COMMAND ======")
 	if err := updateIssue(usr, "Skipped"); err != nil {
 		log.Println(err.Error())
-		text := fmt.Sprintf("Commenting process interrupted by the following errors:\n_%s_\n\nTry repeat this action later, or contact to manager.", err.Error())
+		text := fmt.Sprintf("Commenting process interrupted by the following errors:\n_%s_\nTry repeat this action later, or contact to manager.", err.Error())
 		message(msg.From.ID, text, -1)
 		return
 	}
-	text := fmt.Sprintf("Issue #%d has been skipped.\n\nYou are free from it for the next 24 hours.", usr.Task)
+	text := fmt.Sprintf("Issue #%d has been skipped.\nYou are free from it for the next 24 hours.", usr.Task)
 	message(msg.From.ID, text, usr.Task)
 	go changeIssue(usr, 0)
+
+	go checkIssues(usr)
 }
 
 func message(to int, text string, issue int) {
 	log.Println("====== MESSAGE ======")
+
+	issueURL := url.URL{
+		Scheme: scheme,
+		Host:   endpoint,
+		Path:   fmt.Sprint("issues/", issue),
+	}
+
 	notify := tg.NewMessage(int64(to), text)
 	notify.ParseMode = "markdown"
 	if issue != -1 {
@@ -125,7 +145,7 @@ func message(to int, text string, issue int) {
 			tg.NewInlineKeyboardRow(
 				tg.NewInlineKeyboardButtonURL(
 					fmt.Sprintf("Open issue #%d", issue),
-					fmt.Sprintf("%s/issues/%d", fmt.Sprint(scheme, "://", endpoint), issue),
+					issueURL.String(),
 				),
 			),
 		)
