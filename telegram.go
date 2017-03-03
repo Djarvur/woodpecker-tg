@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	_ "log" // just to safisfy Sublime Go plugin
-	"net/url"
 	"strings"
 
 	tg "github.com/go-telegram-bot-api/telegram-bot-api"
@@ -17,21 +16,18 @@ func messages(msg *tg.Message) {
 
 	usr, err := getUser(msg.From.ID)
 	if err != nil {
+		log.Println("!!!!!! ERROR !!!!!!")
 		log.Println(err.Error())
-		start(msg)
+		if msg.IsCommand() && strings.ToLower(msg.Command()) == "start" {
+			start(msg)
+			return
+		}
+		message(msg.From.ID, "It seems with your Redmine token something wrong. Please, send a new token through a `/start [token]` command.")
 		return
 	}
 
 	if !msg.IsCommand() {
-		task := usr.Task
-		text := "Your connection to Redmine is correctly, all right. 👌🏻"
-		if task != 0 {
-			text += "\n*P.S.:* You last task pinned to this message."
-		} else {
-			task = -1
-		}
-
-		message(usr.Telegram, text, usr.Task)
+		update(usr, msg)
 		return
 	}
 
@@ -39,10 +35,8 @@ func messages(msg *tg.Message) {
 	case "start":
 		start(msg)
 	case "help":
-		text := "`/start [token]` - reconnect account by new token;\n`/help` - show this message;\n`/update [text]` - send note to last task and go to next;\n`/skip` - skip last task and go to next;\n`/last` - get info about your last task;\n`/ping` - 🤔;\n`[any text]` - get current status of your redmine connection;"
-		message(usr.Telegram, text, -1)
-	case "update":
-		update(usr, msg)
+		text := "`/start [token]` - reconnect account by new token;\n`/help` - show this message;\n`[any text]` - send note with `any text` to last task and go to next;\n`/skip` - skip last task and go to next;\n`/last` - get info about your last task;\n`/ping [telegram|redmine|db]` - get current status of your connection;"
+		message(usr.Telegram, text)
 	case "skip":
 		skip(usr, msg)
 	case "last":
@@ -51,91 +45,69 @@ func messages(msg *tg.Message) {
 }
 
 func ping(msg *tg.Message) {
+	log.Println("====== PING COMMAND ======")
 	switch strings.ToLower(msg.CommandArguments()) {
 	case "telegram":
-		message(msg.From.ID, "If you see this message, the connection with Telegram *is stable*. ☺️", -1)
+		message(msg.From.ID, "If you see this message, the connection with Telegram *is stable*. ☺️")
 	case "redmine":
 		if err := pingRedmine(); err != nil {
-			message(msg.From.ID, "Connection to Redmine *is not okay*. 😕", -1)
+			log.Println("!!!!!! ERROR !!!!!!")
+			log.Println(err.Error())
+			message(msg.From.ID, "Connection to Redmine *is not okay*. 😕")
 			return
 		}
-		message(msg.From.ID, "Connection to Redmine *is okay*. ☺️", -1)
+		message(msg.From.ID, "Connection to Redmine *is okay*. ☺️")
 	case "db":
 		writable, err := pingDB()
 		if err != nil {
-			message(msg.From.ID, "Connection to BoltDB *is not okay*. 😕", -1)
+			log.Println("!!!!!! ERROR !!!!!!")
+			log.Println(err.Error())
+			message(msg.From.ID, "Connection to BoltDB *is not okay*. 😕")
 			return
 		}
 
 		if writable {
-			message(msg.From.ID, "Connection to BoltDB *is okay*, but *is not writable*. 😕", -1)
+			message(msg.From.ID, "Connection to BoltDB *is okay*, but *is not writable*. 😕")
 			return
 		}
 
-		message(msg.From.ID, "Connection to BoltDB *is okay* and *is writable*. ☺️", -1)
+		message(msg.From.ID, "Connection to BoltDB *is okay* and *is writable*. ☺️")
 	}
 }
 
 func start(msg *tg.Message) {
 	log.Println("====== START COMMAND ======")
-	switch {
-	case msg.IsCommand():
-		if msg.CommandArguments() != "" {
-			if _, err := createUser(msg.From.ID, msg.CommandArguments()); err != nil {
-				reply := tg.NewMessage(msg.Chat.ID, "Invalid token. Try reset token in your profile page and send it again.")
-				reply.ReplyToMessageID = msg.MessageID
-				bot.Send(reply)
-				return
-			}
-			reply := tg.NewMessage(msg.Chat.ID, "It's all! Just wait notifications! :3")
-			reply.ReplyToMessageID = msg.MessageID
-			reply.ReplyMarkup = tg.ForceReply{
-				ForceReply: false,
-				Selective:  false,
-			}
-			bot.Send(reply)
+	if msg.CommandArguments() != "" {
+		if _, err := createUser(msg.From.ID, msg.CommandArguments()); err != nil {
+			log.Println("!!!!!! ERROR !!!!!!")
+			log.Println(err.Error())
+			message(msg.From.ID, "Invalid token. Try reset token in your profile page and send it again.")
 			return
 		}
-		reply := tg.NewMessage(msg.Chat.ID, "Hello, stranger!\nFor start you need send me your personal token. Go to your profile page, grab it from right sidebar and send it here. Easy!")
-		reply.ReplyToMessageID = msg.MessageID
-		reply.ReplyMarkup = tg.ForceReply{
-			ForceReply: false,
-			Selective:  false,
-		}
-		bot.Send(reply)
-	default:
-		if _, err := createUser(msg.From.ID, msg.Text); err != nil {
-			reply := tg.NewMessage(msg.Chat.ID, "Invalid token. Try reset token in your profile page and send it again.")
-			reply.ReplyToMessageID = msg.MessageID
-			bot.Send(reply)
-			return
-		}
-		reply := tg.NewMessage(msg.Chat.ID, "It's all! Just wait notifications! :3")
-		reply.ReplyToMessageID = msg.MessageID
-		reply.ReplyMarkup = tg.ForceReply{
-			ForceReply: false,
-			Selective:  false,
-		}
-		bot.Send(reply)
+		message(msg.From.ID, "It's all! Just wait notifications! :3")
+		return
 	}
+	message(msg.From.ID, "Hello, stranger!\nFor start you need send me your personal token. Go to your profile page, grab it from right sidebar and send it here. Easy!")
 }
 
 func update(usr *dbUser, msg *tg.Message) {
 	log.Println("====== UPDATE COMMAND ======")
-	if msg.CommandArguments() == "" {
-		text := fmt.Sprintf("Please, use this command with some text", err.Error())
-		message(msg.From.ID, text, -1)
-		return
-	}
-
-	if err := updateIssue(usr, msg.CommandArguments()); err != nil {
+	if err := updateIssue(usr, msg.Text); err != nil {
+		log.Println("!!!!!! ERROR !!!!!!")
 		log.Println(err.Error())
-		text := fmt.Sprintf("Commenting process interrupted by the following errors:\n_%s_\nTry repeat this action later, or contact to manager.", err.Error())
-		message(msg.From.ID, text, -1)
+		text := fmt.Sprintf(
+			"Commenting process interrupted by the following errors:\n_%s_\nTry repeat this action later, or contact to manager.",
+			err.Error(),
+		)
+		message(msg.From.ID, text)
 		return
 	}
-	text := fmt.Sprintf("Your comment: `%s`\nTo issue #%d has been sent!\nYou are free from it for the next 24 hours.", msg.CommandArguments(), usr.Task)
-	message(msg.From.ID, text, usr.Task)
+	text := fmt.Sprintf(
+		"Your comment: `%s`\nTo issue %s has been sent!\nYou are free from it for the next 24 hours.",
+		msg.CommandArguments(),
+		makeIssueUrl(usr.Task),
+	)
+	message(msg.From.ID, text)
 	go changeIssue(usr, 0)
 
 	go checkIssues(usr)
@@ -144,40 +116,31 @@ func update(usr *dbUser, msg *tg.Message) {
 func skip(usr *dbUser, msg *tg.Message) {
 	log.Println("====== SKIP COMMAND ======")
 	if err := updateIssue(usr, "Skipped"); err != nil {
+		log.Println("!!!!!! ERROR !!!!!!")
 		log.Println(err.Error())
-		text := fmt.Sprintf("Commenting process interrupted by the following errors:\n_%s_\nTry repeat this action later, or contact to manager.", err.Error())
-		message(msg.From.ID, text, -1)
+		text := fmt.Sprintf(
+			"Commenting process interrupted by the following errors:\n_%s_\nTry repeat this action later, or contact to manager.",
+			err.Error(),
+		)
+		message(msg.From.ID, text)
 		return
 	}
-	text := fmt.Sprintf("Issue #%d has been skipped.\nYou are free from it for the next 24 hours.", usr.Task)
-	message(msg.From.ID, text, usr.Task)
+	text := fmt.Sprintf(
+		"Issue %s has been skipped.\nYou are free from it for the next 24 hours.",
+		makeIssueUrl(usr.Task),
+	)
+	message(msg.From.ID, text)
 	go changeIssue(usr, 0)
 
 	go checkIssues(usr)
 }
 
-func message(to int, text string, issue int) {
+func message(to int, text string) {
 	log.Println("====== MESSAGE ======")
-
-	issueURL := url.URL{
-		Scheme: scheme,
-		Host:   endpoint,
-		Path:   fmt.Sprint("issues/", issue),
-	}
-
 	notify := tg.NewMessage(int64(to), text)
 	notify.ParseMode = "markdown"
-	if issue != -1 {
-		notify.ReplyMarkup = tg.NewInlineKeyboardMarkup(
-			tg.NewInlineKeyboardRow(
-				tg.NewInlineKeyboardButtonURL(
-					fmt.Sprintf("Open issue #%d", issue),
-					issueURL.String(),
-				),
-			),
-		)
-	}
 	if _, err := bot.Send(notify); err != nil {
+		log.Println("!!!!!! ERROR !!!!!!")
 		log.Println(err.Error())
 	}
 }

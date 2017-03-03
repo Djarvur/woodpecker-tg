@@ -26,7 +26,17 @@ type redmineErrors struct {
 	Errors []string `json:"errors"`
 }
 
+func makeIssueUrl(id int) string {
+	uri := url.URL{
+		Scheme: scheme,
+		Host:   endpoint,
+		Path:   fmt.Sprint("issues/", id),
+	}
+	return fmt.Sprintf("[#%d](%s)", id, uri.String())
+}
+
 func pingRedmine() error {
+	log.Println("====== PING REDMINE ======")
 	req := url.URL{
 		Scheme: scheme,
 		Host:   endpoint,
@@ -35,9 +45,13 @@ func pingRedmine() error {
 
 	code, _, err := http.Get(nil, req.String())
 	if err != nil {
+		log.Println("!!!!!! ERROR !!!!!!")
+		log.Println(err.Error())
 		return err
 	}
-	if code != 200 {
+	if code != http.StatusOK {
+		log.Println("!!!!!! ERROR !!!!!!")
+		log.Println("not 200")
 		return fmt.Errorf("not 200")
 	}
 	return nil
@@ -57,6 +71,8 @@ func getCurrentUser(apikey string) (*redmine.User, error) {
 
 	code, body, err := http.Get(nil, req.String())
 	if err != nil {
+		log.Println("!!!!!! ERROR !!!!!!")
+		log.Println(err.Error())
 		return nil, err
 	}
 
@@ -66,12 +82,16 @@ func getCurrentUser(apikey string) (*redmine.User, error) {
 		var rErr redmineErrors
 		err = decoder.Decode(&rErr)
 		if err == nil {
+			log.Println("!!!!!! ERROR !!!!!!")
+			log.Printf(strings.Join(rErr.Errors, "\n"))
 			err = fmt.Errorf(strings.Join(rErr.Errors, "\n"))
 		}
 	} else {
 		err = decoder.Decode(&rUsr)
 	}
 	if err != nil {
+		log.Println("!!!!!! ERROR !!!!!!")
+		log.Println(err.Error())
 		return nil, err
 	}
 	return &rUsr.User, nil
@@ -102,10 +122,10 @@ func getIssues(apikey string, assignedTo string, offset, limit int, timestamp *t
 	}
 	req.RawQuery = q.Encode()
 
-	log.Println(req.String())
-
 	code, body, err := http.Get(nil, req.String())
 	if err != nil {
+		log.Println("!!!!!! ERROR !!!!!!")
+		log.Println(err.Error())
 		return nil, err
 	}
 
@@ -115,12 +135,16 @@ func getIssues(apikey string, assignedTo string, offset, limit int, timestamp *t
 		var rErr redmineErrors
 		err = decoder.Decode(&rErr)
 		if err == nil {
+			log.Println("!!!!!! ERROR !!!!!!")
+			log.Printf(strings.Join(rErr.Errors, "\n"))
 			err = fmt.Errorf(strings.Join(rErr.Errors, "\n"))
 		}
 	} else {
 		err = decoder.Decode(&rIssues)
 	}
 	if err != nil {
+		log.Println("!!!!!! ERROR !!!!!!")
+		log.Println(err.Error())
 		return nil, err
 	}
 	return rIssues.Issues, nil
@@ -132,15 +156,15 @@ func checkIssues(usr *dbUser) {
 	ts := time.Now().UTC().AddDate(0, 0, -1)
 	issues, err := getIssues(usr.Token, strconv.Itoa(usr.Redmine), 0, 1, &ts)
 	if err != nil {
+		log.Println("!!!!!! ERROR !!!!!!")
 		log.Println(err.Error())
 		return
 	}
 
 	if len(issues) > 0 {
-		log.Println(issues[0].GetTitle())
 		checkIssue(usr, issues[0])
 	} else {
-		message(usr.Telegram, "No one issue for you right now. 🏖", -1)
+		message(usr.Telegram, "No one issue for you right now. 🏖")
 	}
 }
 
@@ -148,6 +172,7 @@ func checkIssue(usr *dbUser, issue redmine.Issue) {
 	log.Println("====== CHECK SINGLE ISSUE ======")
 	updTime, err := time.Parse(time.RFC3339, issue.UpdatedOn)
 	if err != nil {
+		log.Println("!!!!!! ERROR !!!!!!")
 		log.Println(err.Error())
 		return
 	}
@@ -165,7 +190,7 @@ func checkIssue(usr *dbUser, issue redmine.Issue) {
 					for _, role := range mship.Roles {
 						if role.Id == 3 {
 							text := fmt.Sprintf("⚠️ *This task is not assigned to anyone!*\n%s\nLast updated: %s", issue.GetTitle(), updTime.String())
-							message(usr.Telegram, text, issue.Id)
+							message(usr.Telegram, text)
 						}
 					}
 				}
@@ -178,8 +203,14 @@ func checkIssue(usr *dbUser, issue redmine.Issue) {
 	*/
 
 	log.Println("====== MORE THAN 24 HOURS ======")
-	text := fmt.Sprintf("_Use_ `/update sample text` _for comment issue or_ `/skip` _for skip._\n%s\nLast updated: %s", issue.GetTitle(), updTime.String())
-	message(usr.Telegram, text, issue.Id)
+	text := fmt.Sprintf(
+		"Issue %s *%s*\n🗄 Project: %s\nLast updated: %s",
+		makeIssueUrl(issue.Id),
+		issue.Subject,
+		issue.Project.Name,
+		updTime.String(),
+	)
+	message(usr.Telegram, text)
 	go changeIssue(usr, issue.Id)
 }
 
@@ -193,6 +224,8 @@ func updateIssue(usr *dbUser, note string) error {
 	c := redmine.NewClient(fmt.Sprint(scheme, "://", endpoint), usr.Token)
 	issue, err := c.Issue(usr.Task)
 	if err != nil {
+		log.Println("!!!!!! ERROR !!!!!!")
+		log.Println(err.Error())
 		return err
 	}
 
