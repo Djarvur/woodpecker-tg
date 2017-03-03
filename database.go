@@ -165,8 +165,8 @@ func getUser(id int) (*dbUser, error) {
 		log.Println("!!!!!! ERROR !!!!!!")
 		log.Println(err.Error())
 		text := "Your token is broken. Please, send me new valid token."
-		go message(id, text)
-		go removeUser(id)
+		message(id, text)
+		removeUser(id)
 		return nil, fmt.Errorf("invalid token")
 	}
 

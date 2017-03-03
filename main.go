@@ -6,7 +6,7 @@ import (
 
 	tg "github.com/go-telegram-bot-api/telegram-bot-api"
 	"github.com/powerman/structlog"
-	f "github.com/valyala/fasthttp"
+	http "github.com/valyala/fasthttp"
 )
 
 var (
@@ -61,7 +61,7 @@ func setUpdates(isWebhook bool) (<-chan tg.Update, error) {
 	if _, err := bot.SetWebhook(tg.NewWebhook(fmt.Sprint(set, token))); err != nil {
 		return nil, err
 	}
-	go f.ListenAndServe(serve, nil)
+	go http.ListenAndServe(serve, nil)
 	updates := bot.ListenForWebhook(fmt.Sprint(listen, token))
 	return updates, nil
 }

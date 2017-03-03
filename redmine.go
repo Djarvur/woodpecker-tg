@@ -204,14 +204,15 @@ func checkIssue(usr *dbUser, issue redmine.Issue) {
 
 	log.Println("====== MORE THAN 24 HOURS ======")
 	text := fmt.Sprintf(
-		"Issue %s *%s*\n🗄 Project: %s\nLast updated: %s",
+		"🏷 %s\n🗄 %s\n*%s*\n\n_%s_\n⏰ Last updated: %s",
 		makeIssueUrl(issue.Id),
-		issue.Subject,
 		issue.Project.Name,
+		issue.Subject,
+		issue.Description,
 		updTime.String(),
 	)
 	message(usr.Telegram, text)
-	go changeIssue(usr, issue.Id)
+	changeIssue(usr, issue.Id)
 }
 
 func updateIssue(usr *dbUser, note string) error {

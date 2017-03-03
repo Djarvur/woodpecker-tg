@@ -104,13 +104,13 @@ func update(usr *dbUser, msg *tg.Message) {
 	}
 	text := fmt.Sprintf(
 		"Your comment: `%s`\nTo issue %s has been sent!\nYou are free from it for the next 24 hours.",
-		msg.CommandArguments(),
+		msg.Text,
 		makeIssueUrl(usr.Task),
 	)
 	message(msg.From.ID, text)
-	go changeIssue(usr, 0)
+	changeIssue(usr, 0)
 
-	go checkIssues(usr)
+	checkIssues(usr)
 }
 
 func skip(usr *dbUser, msg *tg.Message) {
@@ -130,9 +130,9 @@ func skip(usr *dbUser, msg *tg.Message) {
 		makeIssueUrl(usr.Task),
 	)
 	message(msg.From.ID, text)
-	go changeIssue(usr, 0)
+	changeIssue(usr, 0)
 
-	go checkIssues(usr)
+	checkIssues(usr)
 }
 
 func message(to int, text string) {
