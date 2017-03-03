@@ -26,6 +26,23 @@ type redmineErrors struct {
 	Errors []string `json:"errors"`
 }
 
+func pingRedmine() error {
+	req := url.URL{
+		Scheme: scheme,
+		Host:   endpoint,
+		Path:   "news.json",
+	}
+
+	code, _, err := http.Get(nil, req.String())
+	if err != nil {
+		return err
+	}
+	if code != 200 {
+		return fmt.Errorf("not 200")
+	}
+	return nil
+}
+
 func getCurrentUser(apikey string) (*redmine.User, error) {
 	log.Println("====== GET CURRENT USER ======")
 	req := &url.URL{
@@ -122,6 +139,8 @@ func checkIssues(usr *dbUser) {
 	if len(issues) > 0 {
 		log.Println(issues[0].GetTitle())
 		checkIssue(usr, issues[0])
+	} else {
+		message(usr.Telegram, "No one issue for you right now. 🏖", -1)
 	}
 }
 

@@ -57,10 +57,14 @@ func init() {
 	}()
 }
 
-// TODO: сомнительна полезность vault.db для такого малого количества данных.
-// возможно, надо сделать соответствующую структуру в памяти,
-// всасывать ее при старте
-// и дампить на диск при изменениях
+func pingDB() (bool, error) {
+	var write bool
+	err := db.View(func(tx *bolt.Tx) error {
+		write = tx.Writable()
+		return nil
+	})
+	return write, err
+}
 
 func createUser(id int, tkn string) (*dbUser, error) {
 	log.Println("====== CREATE USER ======")

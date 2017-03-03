@@ -11,9 +11,7 @@ import (
 
 func messages(msg *tg.Message) {
 	if msg.IsCommand() && strings.ToLower(msg.Command()) == "ping" {
-		reply := tg.NewMessage(msg.Chat.ID, "pong")
-		reply.ReplyToMessageID = msg.MessageID
-		bot.Send(reply)
+		ping(msg)
 		return
 	}
 
@@ -49,6 +47,32 @@ func messages(msg *tg.Message) {
 		skip(usr, msg)
 	case "last":
 		checkIssues(usr)
+	}
+}
+
+func ping(msg *tg.Message) {
+	switch strings.ToLower(msg.CommandArguments()) {
+	case "telegram":
+		message(msg.From.ID, "If you see this message, the connection with Telegram *is stable*. ☺️", -1)
+	case "redmine":
+		if err := pingRedmine(); err != nil {
+			message(msg.From.ID, "Connection to Redmine *is not okay*. 😕", -1)
+			return
+		}
+		message(msg.From.ID, "Connection to Redmine *is okay*. ☺️", -1)
+	case "db":
+		writable, err := pingDB()
+		if err != nil {
+			message(msg.From.ID, "Connection to BoltDB *is not okay*. 😕", -1)
+			return
+		}
+
+		if writable {
+			message(msg.From.ID, "Connection to BoltDB *is okay*, but *is not writable*. 😕", -1)
+			return
+		}
+
+		message(msg.From.ID, "Connection to BoltDB *is okay* and *is writable*. ☺️", -1)
 	}
 }
 
