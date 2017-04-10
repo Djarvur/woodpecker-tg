@@ -19,22 +19,23 @@ type dbUser struct {
 var db *bolt.DB
 
 // FIXME: init() не место для инициализаци базы
-func init() {
+func initDB() {
 	var err error
-	go func() {
-		log.Println("###### DB OPEN ######")
-		db, err = bolt.Open(*dbFlag, 0600, nil)
-		if err != nil {
-			log.Fatalln(err.Error())
-		}
-		defer db.Close()
-		log.Printf("DB %s opened", *dbFlag)
-		select {}
-	}()
+	log.Println("###### DB OPEN ######")
+	db, err = bolt.Open(*dbFlag, 0600, nil)
+	if err != nil {
+		log.Fatalln(err.Error())
+	}
+	// defer db.Close()
+	log.Printf("DB %s opened", *dbFlag)
 
 	go func() {
 		ticker := time.NewTicker(time.Minute * 15)
 		for t := range ticker.C {
+			now := time.Now()
+			todayStart := time.Date(now.Year(), now.Month(), now.Day(), 7, 0, 0, 0, time.UTC)
+			todayEnd := time.Date(now.Year(), now.Month(), now.Day(), 16, 0, 0, 0, time.UTC)
+
 			log.Println("ticker:", t.String())
 			log.Println("###### VIEW ######")
 			if err := db.View(func(tx *bolt.Tx) error {
@@ -54,7 +55,20 @@ func init() {
 						return err
 					}
 
-					go checkIssues(usr)
+					log.Println("Now:", now.UTC().String())
+					log.Println("StartTime:", todayStart.String())
+					log.Println("EndTime:", todayEnd.String())
+
+					if now.UTC().Before(todayStart) {
+						if now.UTC().After(todayEnd) {
+							if usr.Task != 0 {
+								message(usr.Telegram, "The work day is over, good night. 😴")
+								changeIssue(usr, 0)
+							}
+							return nil
+						}
+						go checkIssues(usr, false)
+					}
 					return nil
 				})
 			}); err != nil {
@@ -93,7 +107,7 @@ func createUser(id int, tkn string) (*dbUser, error) {
 	}
 
 	log.Println("###### BATCH ######")
-	err = db.Batch(func(tx *bolt.Tx) error {
+	if err := db.Batch(func(tx *bolt.Tx) error {
 		log.Println("###### CREATE BUCKET IF NOT EXISTS ######")
 		bkt, err := tx.CreateBucketIfNotExists([]byte(strconv.Itoa(id)))
 		if err != nil {
@@ -107,16 +121,16 @@ func createUser(id int, tkn string) (*dbUser, error) {
 		log.Println("###### PUT TELEGRAM ######")
 		bkt.Put([]byte("telegram"), []byte(strconv.Itoa(id)))
 		log.Println("###### PUT TASK ######")
-		bkt.Put([]byte("task"), []byte(strconv.Itoa(r.Id)))
+		bkt.Put([]byte("task"), []byte(strconv.Itoa(0)))
 		log.Println("###### PUT TOKEN ######")
 		bkt.Put([]byte("token"), []byte(tkn))
 
 		log.Println("###### RETURN NIL ######")
 		return nil
-	})
-	if err != nil {
+	}); err != nil {
 		log.Println("!!!!!! ERROR !!!!!!")
 		log.Println(err.Error())
+		return nil, err
 	}
 
 	usr := &dbUser{
@@ -149,7 +163,7 @@ func getUser(id int) (*dbUser, error) {
 		usr.Redmine, _ = strconv.Atoi(string(bkt.Get([]byte("redmine"))))
 		log.Println("###### GET TELEGRAM ######")
 		usr.Telegram, _ = strconv.Atoi(string(bkt.Get([]byte("telegram"))))
-		log.Println("###### GET TAST ######")
+		log.Println("###### GET TASK ######")
 		usr.Task, _ = strconv.Atoi(string(bkt.Get([]byte("task"))))
 		log.Println("###### GET TOKEN ######")
 		usr.Token = string(bkt.Get([]byte("token")))
@@ -164,13 +178,16 @@ func getUser(id int) (*dbUser, error) {
 	if _, err := getCurrentUser(usr.Token); err != nil {
 		log.Println("!!!!!! ERROR !!!!!!")
 		log.Println(err.Error())
+		changeIssue(&usr, 0)
+		removeUser(id)
 		text := "Your token is broken. Please, send me new valid token."
 		message(id, text)
-		removeUser(id)
 		return nil, fmt.Errorf("invalid token")
 	}
 
 	log.Println("###### VIEW DONE ######")
+
+	log.Println("USER TASK:", usr.Task)
 
 	return &usr, err
 }

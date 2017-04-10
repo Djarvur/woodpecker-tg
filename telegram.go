@@ -18,6 +18,7 @@ func messages(msg *tg.Message) {
 	if err != nil {
 		log.Println("!!!!!! ERROR !!!!!!")
 		log.Println(err.Error())
+
 		if msg.IsCommand() && strings.ToLower(msg.Command()) == "start" {
 			start(msg)
 			return
@@ -27,7 +28,7 @@ func messages(msg *tg.Message) {
 	}
 
 	if !msg.IsCommand() {
-		update(usr, msg)
+		message(usr.Telegram, "Please, use valid commands from /help commands list.")
 		return
 	}
 
@@ -35,12 +36,16 @@ func messages(msg *tg.Message) {
 	case "start":
 		start(msg)
 	case "help":
-		text := "`/start [token]` - reconnect account by new token;\n`/help` - show this message;\n`[any text]` - send note with `any text` to last task and go to next;\n`/skip` - skip last task and go to next;\n`/last` - get info about your last task;\n`/ping [telegram|redmine|db]` - get current status of your connection;"
+		text := "`/start [token]` - reconnect account by new token;\n`/help` - show this message;\n`/update [hours] [any text]` - send note with `any text` to last task and go to next;\n`/skip` - skip last task and go to next;\n`/last` - get info about your last task;\n`/ping [telegram|redmine|db]` - get current status of your connection;"
 		message(usr.Telegram, text)
 	case "skip":
 		skip(usr, msg)
 	case "last":
-		checkIssues(usr)
+		checkIssues(usr, true)
+	case "close":
+		closeIssue(usr, usr.Task)
+	case "update":
+		update(usr, msg)
 	}
 }
 
@@ -78,28 +83,33 @@ func ping(msg *tg.Message) {
 func start(msg *tg.Message) {
 	log.Println("====== START COMMAND ======")
 	if msg.CommandArguments() != "" {
-		if _, err := createUser(msg.From.ID, msg.CommandArguments()); err != nil {
+		usr, err := createUser(msg.From.ID, msg.CommandArguments())
+		if err != nil {
 			log.Println("!!!!!! ERROR !!!!!!")
 			log.Println(err.Error())
 			message(msg.From.ID, "Invalid token. Try reset token in your profile page and send it again.")
 			return
 		}
 		message(msg.From.ID, "It's all! Just wait notifications! :3")
+		checkIssues(usr, true)
 		return
 	}
-	message(msg.From.ID, "Hello, stranger!\nFor start you need send me your personal token. Go to your profile page, grab it from right sidebar and send it here. Easy!")
+	message(msg.From.ID, "Hello, stranger!\nFor start you need send me your personal token. Go to your profile page, grab it from right sidebar and send it by `/start [token]` command. Easy!")
 }
 
 func update(usr *dbUser, msg *tg.Message) {
+	if usr.Task == 0 {
+		message(usr.Telegram, "No one issue for you right now. 🏖")
+		return
+	}
+	if msg.CommandArguments() == "" {
+		message(usr.Telegram, "Please, use `/update` command with `[hours]` and/or `[any text]` arguments.")
+		return
+	}
 	log.Println("====== UPDATE COMMAND ======")
-	if err := updateIssue(usr, msg.Text); err != nil {
+	if err := updateIssue(usr, msg.CommandArguments(), false); err != nil {
 		log.Println("!!!!!! ERROR !!!!!!")
-		log.Println(err.Error())
-		text := fmt.Sprintf(
-			"Commenting process interrupted by the following errors:\n_%s_\nTry repeat this action later, or contact to manager.",
-			err.Error(),
-		)
-		message(msg.From.ID, text)
+		message(msg.From.ID, err.Error())
 		return
 	}
 	text := fmt.Sprintf(
@@ -109,20 +119,14 @@ func update(usr *dbUser, msg *tg.Message) {
 	)
 	message(msg.From.ID, text)
 	changeIssue(usr, 0)
-
-	checkIssues(usr)
+	checkIssues(usr, true)
 }
 
 func skip(usr *dbUser, msg *tg.Message) {
 	log.Println("====== SKIP COMMAND ======")
-	if err := updateIssue(usr, "Skipped"); err != nil {
+	if err := updateIssue(usr, "Skipped", false); err != nil {
 		log.Println("!!!!!! ERROR !!!!!!")
-		log.Println(err.Error())
-		text := fmt.Sprintf(
-			"Commenting process interrupted by the following errors:\n_%s_\nTry repeat this action later, or contact to manager.",
-			err.Error(),
-		)
-		message(msg.From.ID, text)
+		message(msg.From.ID, err.Error())
 		return
 	}
 	text := fmt.Sprintf(
@@ -131,9 +135,26 @@ func skip(usr *dbUser, msg *tg.Message) {
 	)
 	message(msg.From.ID, text)
 	changeIssue(usr, 0)
-
-	checkIssues(usr)
+	checkIssues(usr, true)
 }
+
+/*
+func closeIssue(usr *dbUser, msg *tg.Message) {
+	log.Println("====== SKIP COMMAND ======")
+	if err := updateIssue(usr, "Closed", true); err != nil {
+		log.Println("!!!!!! ERROR !!!!!!")
+		message(msg.From.ID, err.Error())
+		return
+	}
+	text := fmt.Sprintf(
+		"Issue %s has been closed.\nI will not remind you of this again, unless it is reopened.",
+		makeIssueUrl(usr.Task),
+	)
+	message(msg.From.ID, text)
+	changeIssue(usr, 0)
+	checkIssues(usr, true)
+}
+*/
 
 func message(to int, text string) {
 	log.Println("====== MESSAGE ======")

@@ -97,7 +97,7 @@ func getCurrentUser(apikey string) (*redmine.User, error) {
 	return &rUsr.User, nil
 }
 
-func getIssues(apikey string, assignedTo string, offset, limit int, timestamp *time.Time) ([]redmine.Issue, error) {
+func getIssues(apikey, assignedTo string, offset, limit int, timestamp *time.Time) ([]redmine.Issue, error) {
 	log.Println("====== GET ISSUES ======")
 
 	req := &url.URL{
@@ -117,12 +117,14 @@ func getIssues(apikey string, assignedTo string, offset, limit int, timestamp *t
 	if limit > 0 {
 		q.Set("limit", strconv.Itoa(limit))
 	}
-	if timestamp != nil {
-		q.Set("updated_on", fmt.Sprint("<=", timestamp.Format(time.RFC3339)))
-	}
 	req.RawQuery = q.Encode()
 
-	code, body, err := http.Get(nil, req.String())
+	reqStr := req.String()
+	if timestamp != nil {
+		reqStr += url.QueryEscape(fmt.Sprint("updated_on", "<=", timestamp.Format(time.RFC3339)))
+	}
+
+	code, body, err := http.Get(nil, reqStr)
 	if err != nil {
 		log.Println("!!!!!! ERROR !!!!!!")
 		log.Println(err.Error())
@@ -150,7 +152,7 @@ func getIssues(apikey string, assignedTo string, offset, limit int, timestamp *t
 	return rIssues.Issues, nil
 }
 
-func checkIssues(usr *dbUser) {
+func checkIssues(usr *dbUser, fromUser bool) {
 	log.Println("====== CHECK ISSUES ======")
 
 	ts := time.Now().UTC().AddDate(0, 0, -1)
@@ -158,12 +160,14 @@ func checkIssues(usr *dbUser) {
 	if err != nil {
 		log.Println("!!!!!! ERROR !!!!!!")
 		log.Println(err.Error())
+		message(usr.Telegram, err.Error())
 		return
 	}
 
 	if len(issues) > 0 {
 		checkIssue(usr, issues[0])
-	} else {
+	} else if fromUser {
+		changeIssue(usr, 0)
 		message(usr.Telegram, "No one issue for you right now. 🏖")
 	}
 }
@@ -204,10 +208,10 @@ func checkIssue(usr *dbUser, issue redmine.Issue) {
 
 	log.Println("====== MORE THAN 24 HOURS ======")
 	text := fmt.Sprintf(
-		"🏷 %s\n🗄 %s\n*%s*\n\n_%s_\n⏰ Last updated: %s",
+		"*%s*\n🏷 %s\n🗄 %s\n\n_%s_\n\n⏰ Last updated: %s",
+		issue.Subject,
 		makeIssueUrl(issue.Id),
 		issue.Project.Name,
-		issue.Subject,
 		issue.Description,
 		updTime.String(),
 	)
@@ -215,8 +219,66 @@ func checkIssue(usr *dbUser, issue redmine.Issue) {
 	changeIssue(usr, issue.Id)
 }
 
-func updateIssue(usr *dbUser, note string) error {
+func closeIssue(usr *dbUser, id int) error {
+	if usr.Task == 0 {
+		return fmt.Errorf("not selected task")
+	}
+
+	issue := redmine.Issue{
+		Id: id,
+	}
+	issue.Status = &redmine.IdName{
+		Id:   statusClosed,
+		Name: "closed",
+	}
+	body, err := json.Marshal(issue)
+	if err != nil {
+		log.Fatalln(err.Error())
+		return err
+	}
+
+	uri := &url.URL{
+		Scheme: scheme,
+		Host:   endpoint,
+		Path:   fmt.Sprintf("issues/%d.json", id),
+	}
+
+	log.Println(uri.String())
+
+	var req http.Request
+	req.Header.SetMethod("PUT")
+	req.Header.SetContentType("application/json; charset=utf-8")
+	req.Header.Set("X-Redmine-API-Key", usr.Token)
+	req.SetRequestURI(uri.String())
+	req.SetBody(body)
+
+	var resp http.Response
+	err = http.Do(&req, &resp)
+	if err != nil {
+		log.Fatalln(err.Error())
+		return err
+	}
+
+	log.Println(string(resp.Body()))
+
+	text := fmt.Sprintf(
+		"Issue %s has been closed.\nI will not remind you of this again, unless it is reopened.",
+		makeIssueUrl(usr.Task),
+	)
+	message(usr.Telegram, text)
+	changeIssue(usr, 0)
+	checkIssues(usr, true)
+
+	return nil
+}
+
+func updateIssue(usr *dbUser, note string, closed bool) error {
 	log.Println("====== UPDATE ISSUE ======")
+
+	if closed {
+		closeIssue(usr, usr.Task)
+		return nil
+	}
 
 	if usr.Task == 0 {
 		return fmt.Errorf("not selected task")
@@ -230,8 +292,17 @@ func updateIssue(usr *dbUser, note string) error {
 		return err
 	}
 
-	issue.Notes = fmt.Sprintf("%s via @%s", note, bot.Self.UserName)
+	issue.CategoryId = 0
+	issue.ProjectId = issue.Project.Id
 	issue.PriorityId = issue.Priority.Id
+	issue.TrackerId = issue.Tracker.Id
+	if closed {
+		issue.StatusId = statusClosed
+	} else {
+		issue.Notes = fmt.Sprintf("%s via @%s", note, bot.Self.UserName)
+	}
+
+	log.Println("TrackerID:", issue.Tracker.Id, "\nTrackerName:", issue.Tracker.Name)
 
 	return c.UpdateIssue(*issue)
 }

@@ -10,6 +10,7 @@ import (
 var (
 	cfg                                         *config.Config
 	endpoint, token, set, listen, serve, scheme string
+	statusClosed                                int
 
 	configFlag  = flag.String("config", "config.yml", "load custom config file")
 	dbFlag      = flag.String("db", "woodpecker.db", "select custom db file")
@@ -34,6 +35,11 @@ func initConfig() {
 	}
 
 	endpoint, err = cfg.String("redmine.endpoint")
+	if err != nil {
+		log.Fatalln(err.Error())
+	}
+
+	statusClosed, err = cfg.Int("redmine.closed_id")
 	if err != nil {
 		log.Fatalln(err.Error())
 	}

@@ -25,6 +25,9 @@ func main() {
 
 	initConfig()
 
+	initDB()
+	defer db.Close()
+
 	bot, err = tg.NewBotAPI(token)
 	if err != nil {
 		log.Fatalln(err.Error())
